@@ -1,0 +1,5 @@
+{
+  "name": "supernova",
+  "description": "An AI-powered design agent using Gemini 3 to generate modern landing pages and UI components.",
+  "requestFramePermissions": []
+}
