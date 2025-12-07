@@ -22,6 +22,7 @@ interface SidebarProps {
   projectName?: string;
   onRenameProject?: (name: string) => void;
   onToggleSidebar?: () => void;
+  onNavigateBack?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -42,7 +43,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClearSelectedElement,
   projectName = 'Untitled Project',
   onRenameProject,
-  onToggleSidebar
+  onToggleSidebar,
+  onNavigateBack
 }) => {
   const [input, setInput] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
@@ -524,12 +526,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <button 
                     onClick={() => {
                       setShowProjectMenu(false);
-                      // Navigate to Dashboard (Placeholder)
+                      onNavigateBack?.();
                     }}
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
                   >
                     <Home size={16} className="text-gray-400" />
-                    대시보드로 돌아가기
+                    홈으로 돌아가기
                   </button>
                   <button 
                     onClick={() => {
