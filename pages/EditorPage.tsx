@@ -346,184 +346,23 @@ Return the COMPLETE HTML with this single element modified.
     }
   };
 
+  // handleSendMessage를 ref로 저장 (의존성 문제 해결)
+  const handleSendMessageRef = useRef(handleSendMessage);
+  handleSendMessageRef.current = handleSendMessage;
+
   // 초기 프롬프트가 있으면 자동으로 생성 시작
   useEffect(() => {
-    if (initialPrompt && !hasInitializedRef.current && !isGenerating) {
+    if (initialPrompt && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
-      // 약간의 딜레이 후 자동 생성 시작
-      const timer = setTimeout(() => {
-        // 직접 생성 로직 시작
-        const startGeneration = async () => {
-          const content = initialPrompt;
-          const images = initialImages;
-          const model: ModelType = 'pro';
-          
-          const userMsg: Message = {
-            id: Date.now().toString(),
-            role: Role.USER,
-            content,
-            imageUrl: images.length > 0 ? images[0] : undefined,
-            imageUrls: images.length > 0 ? images : undefined,
-            timestamp: Date.now()
-          };
-          
-          setMessages(prev => [...prev, userMsg]);
-          setIsGenerating(true);
-
-          const botMsgId = (Date.now() + 1).toString();
-          const componentTitle = extractComponentTitle(content);
-
-          const initialSections: GenerationSection[] = [
-            { id: 'think1', type: 'thinking', label: '분석 중', status: 'active', isExpanded: false },
-            { id: 'create', type: 'action', label: '페이지 노드 생성', status: 'pending' },
-            { id: 'think2', type: 'thinking', label: '설계 중', status: 'pending', isExpanded: true },
-            { 
-              id: 'files', 
-              type: 'files', 
-              label: '파일 생성', 
-              status: 'pending',
-              files: [
-                { id: 'pkg', path: '/package.json', type: 'new', language: 'json', status: 'pending' },
-                { id: 'app', path: '/src/App.tsx', type: 'new', language: 'tsx', status: 'pending' },
-                { id: 'component', path: '/src/Component.tsx', type: 'new', language: 'tsx', status: 'pending' },
-                { id: 'readme', path: '/README.md', type: 'new', language: 'md', status: 'pending' }
-              ]
-            },
-            { id: 'build', type: 'action', label: '페이지 빌드', status: 'pending' },
-            { id: 'result', type: 'result', label: '완료', status: 'pending', features: [] }
-          ];
-
-          setMessages(prev => [...prev, {
-            id: botMsgId,
-            role: Role.MODEL,
-            content: '',
-            timestamp: Date.now(),
-            isThinking: true,
-            generationSections: initialSections,
-            componentTitle
-          }]);
-
-          const GAP = 100;
-          const DEFAULT_WIDTH = 1440;
-          const DEFAULT_HEIGHT = 900;
-          
-          const targetNodeId = `node-${Date.now()}`;
-          const newNode: DesignNode = {
-            id: targetNodeId,
-            type: 'component',
-            title: componentTitle,
-            html: '', 
-            x: 0,
-            y: 0,
-            width: DEFAULT_WIDTH,
-            height: DEFAULT_HEIGHT
-          };
-          setNodes(prev => [...prev, newNode]);
-          setFocusTrigger({ id: targetNodeId, timestamp: Date.now() });
-
-          try {
-            const speedFactor = model === 'fast' ? 0.5 : 1;
-            
-            await new Promise(r => setTimeout(r, 1500 * speedFactor));
-            updateSection(botMsgId, 'think1', { status: 'completed', duration: 1500 * speedFactor });
-            
-            updateSection(botMsgId, 'create', { status: 'active' });
-            await new Promise(r => setTimeout(r, 500 * speedFactor));
-            updateSection(botMsgId, 'create', { status: 'completed', duration: 500 * speedFactor });
-            
-            updateSection(botMsgId, 'think2', { status: 'active' });
-            await new Promise(r => setTimeout(r, 2000 * speedFactor));
-            updateSection(botMsgId, 'think2', { status: 'completed', duration: 2000 * speedFactor });
-            
-            updateSection(botMsgId, 'files', { status: 'active' });
-            
-            const fileConfigs = [
-              { id: 'pkg', lines: 10, delay: 300 },
-              { id: 'app', lines: 9, delay: 400 },
-            ];
-            
-            for (const config of fileConfigs) {
-              updateFileInSection(botMsgId, 'files', config.id, { status: 'generating' });
-              await new Promise(r => setTimeout(r, config.delay * speedFactor));
-              updateFileInSection(botMsgId, 'files', config.id, { status: 'completed', linesAdded: config.lines });
-            }
-
-            updateFileInSection(botMsgId, 'files', 'component', { status: 'generating' });
-            
-            let fullResponse = '';
-            let lineCount = 0;
-            let lastUpdateTime = 0;
-            const UPDATE_INTERVAL = 500;
-            
-            await generateDesignStream(content, images, undefined, model, (chunk) => {
-               fullResponse += chunk;
-               lineCount = (fullResponse.match(/\n/g) || []).length;
-               
-               setNodes(currentNodes => currentNodes.map(n => 
-                 n.id === targetNodeId 
-                   ? { ...n, html: extractHtml(fullResponse) } 
-                   : n
-               ));
-               
-               const now = Date.now();
-               if (now - lastUpdateTime > UPDATE_INTERVAL) {
-                 updateFileInSection(botMsgId, 'files', 'component', { linesAdded: lineCount });
-                 lastUpdateTime = now;
-               }
-            });
-
-            updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 445 });
-            
-            updateFileInSection(botMsgId, 'files', 'readme', { status: 'generating' });
-            await new Promise(r => setTimeout(r, 200 * speedFactor));
-            updateFileInSection(botMsgId, 'files', 'readme', { status: 'completed', linesAdded: 28 });
-            
-            updateSection(botMsgId, 'files', { status: 'completed' });
-
-            updateSection(botMsgId, 'build', { status: 'active' });
-            await new Promise(r => setTimeout(r, 800 * speedFactor));
-            updateSection(botMsgId, 'build', { status: 'completed', duration: 800 * speedFactor });
-
-            const cleanHtml = extractHtml(fullResponse);
-            const features = extractFeatures(content);
-            
-            updateSection(botMsgId, 'result', { 
-              status: 'completed',
-              resultSummary: `${componentTitle} 페이지를 성공적으로 생성했습니다.`,
-              features
-            });
-
-            setNodes(currentNodes => currentNodes.map(n => 
-              n.id === targetNodeId 
-                ? { ...n, html: cleanHtml, title: componentTitle } 
-                : n
-            ));
-
-            setMessages(prev => prev.map(msg => 
-              msg.id === botMsgId 
-                ? { ...msg, isThinking: false }
-                : msg
-            ));
-
-          } catch (error: any) {
-            console.error('Generation Error:', error);
-            const errorMessage = error?.message || error?.toString() || '알 수 없는 오류';
-            setMessages(prev => [...prev, {
-              id: Date.now().toString(),
-              role: Role.MODEL,
-              content: `오류가 발생했습니다: ${errorMessage}`,
-              timestamp: Date.now()
-            }]);
-          } finally {
-            setIsGenerating(false);
-          }
-        };
-        
-        startGeneration();
-      }, 100);
-      return () => clearTimeout(timer);
+      
+      // 약간의 딜레이 후 생성 시작 (cleanup에서 취소하지 않음)
+      setTimeout(() => {
+        if (handleSendMessageRef.current) {
+          handleSendMessageRef.current(initialPrompt, initialImages, 'pro');
+        }
+      }, 300);
     }
-  }, [initialPrompt]);
+  }, [initialPrompt, initialImages]);
 
   const handleUpdateNode = (updatedNode: DesignNode) => {
     setNodes(prev => prev.map(n => n.id === updatedNode.id ? updatedNode : n));
