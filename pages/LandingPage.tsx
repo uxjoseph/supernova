@@ -1,15 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowUp, Image as ImageIcon, Paperclip, Moon, Sun, Globe } from 'lucide-react';
+import { ArrowUp, Image as ImageIcon, Paperclip, Moon, Sun, Globe, X } from 'lucide-react';
 import { Language, detectLanguage, getTranslation } from '../i18n';
 import logoLight from '../img/logo_lightmode.png';
 import logoDark from '../img/logo_darkmode.png';
+import { AuthButton } from '../components/AuthButton';
+import { UserMenu } from '../components/UserMenu';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LandingPageProps {
   onNavigateToEditor: (prompt: string, images?: string[]) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) => {
+  const { user, isLoading: authLoading } = useAuth();
+  
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -110,7 +115,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
               <img src={logoLight} alt="Supanova" className="h-8 w-auto dark:hidden" />
               <img src={logoDark} alt="Supanova" className="h-8 w-auto hidden dark:block" />
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <button 
                 onClick={toggleLanguage}
                 className="flex items-center gap-1.5 text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -124,6 +129,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
               >
                 {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
               </button>
+              {/* Auth Section */}
+              {!authLoading && (
+                user ? (
+                  <UserMenu />
+                ) : (
+                  <AuthButton variant="outline" size="sm" />
+                )
+              )}
             </div>
           </div>
         </div>

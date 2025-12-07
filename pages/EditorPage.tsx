@@ -1,9 +1,12 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { Canvas } from '../components/Canvas';
-import { PanelLeftOpen, ArrowLeft } from 'lucide-react';
+import { PanelLeftOpen, ArrowLeft, Cloud, CloudOff, Check } from 'lucide-react';
 import { Message, Role, DesignNode, FileArtifact, GenerationSection, VariantCreationState, PreviewTab, SelectedElement } from '../types';
 import { generateDesignStream, extractHtml, ModelType } from '../services/geminiService';
+import { useProject } from '../hooks/useProject';
+import { useCredits } from '../hooks/useCredits';
+import { useAuth } from '../contexts/AuthContext';
 
 interface EditorPageProps {
   initialPrompt?: string;
@@ -21,6 +24,28 @@ export const EditorPage: React.FC<EditorPageProps> = ({
   const [projectName, setProjectName] = useState('Untitled Project');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const hasInitializedRef = useRef(false);
+
+  // Auth and project hooks
+  const { user, isConfigured } = useAuth();
+  const { 
+    project, 
+    createProject, 
+    updateProjectName, 
+    saveNode, 
+    saveNodes, 
+    deleteNode: deleteNodeFromDb,
+    loadNodes,
+    isSaving,
+    lastSaved 
+  } = useProject();
+  const { deductCredits, hasEnoughCredits } = useCredits();
+
+  // Initialize project on mount
+  useEffect(() => {
+    if (user && isConfigured && !project) {
+      createProject(projectName);
+    }
+  }, [user, isConfigured, project, createProject, projectName]);
 
   const startResizing = useCallback(() => {
     isResizing.current = true;
@@ -366,10 +391,14 @@ Return the COMPLETE HTML with this single element modified.
 
   const handleUpdateNode = (updatedNode: DesignNode) => {
     setNodes(prev => prev.map(n => n.id === updatedNode.id ? updatedNode : n));
+    // Auto-save to database
+    saveNode(updatedNode);
   };
 
   const handleAddNode = (newNode: DesignNode) => {
     setNodes(prev => [...prev, newNode]);
+    // Auto-save to database
+    saveNode(newNode);
   };
 
   const handleDeleteNode = (nodeId: string) => {
@@ -377,6 +406,8 @@ Return the COMPLETE HTML with this single element modified.
     if (selectedNodeId === nodeId) {
       setSelectedNodeId(null);
     }
+    // Delete from database
+    deleteNodeFromDb(nodeId);
   };
 
   const handleOpenPreviewTab = (nodeId: string) => {
