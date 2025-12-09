@@ -3,9 +3,9 @@ import { DESIGN_SYSTEM_GUIDE, LANDING_PAGE_TEMPLATE } from "../designSystem";
 import { TokenUsageMetadata, GenerationResult } from "../types";
 
 // Initialize Gemini Client
-// 로컬 개발 & Vercel: process.env.GEMINI_API_KEY (vite.config.ts에서 define으로 주입)
+// Vercel GEMINI_API_KEY 환경 변수 사용 (vite.config.ts에서 주입)
 const ai = new GoogleGenAI({ 
-  apiKey: (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) || '' 
+  apiKey: process.env.GEMINI_API_KEY || '' 
 });
 
 const DEFAULT_SYSTEM_INSTRUCTION = `
