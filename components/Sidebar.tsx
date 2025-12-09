@@ -990,39 +990,3 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </div>
   );
 };
-
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                }`}
-              >
-                {isGenerating ? (
-                  <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-white rounded-full animate-spin"/>
-                ) : (
-                  <Send size={12} />
-                )}
-                <span>생성</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                }`}
-              >
-                {isGenerating ? (
-                  <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-white rounded-full animate-spin"/>
-                ) : (
-                  <Send size={12} />
-                )}
-                <span>생성</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
