@@ -27,6 +27,9 @@ create policy "Users can view own profile" on public.profiles
 create policy "Users can update own profile" on public.profiles
   for update using (auth.uid() = id);
 
+create policy "Users can insert own profile" on public.profiles
+  for insert with check (auth.uid() = id);
+
 -- Auto-create profile on user signup
 create or replace function public.handle_new_user()
 returns trigger as $$
@@ -55,6 +58,7 @@ create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references public.profiles(id) on delete cascade not null,
   name text default 'Untitled Project',
+  thumbnail_url text,
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );

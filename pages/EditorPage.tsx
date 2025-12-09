@@ -31,6 +31,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     project, 
     createProject, 
     updateProjectName, 
+    updateProjectThumbnail,
     saveNode, 
     saveNodes, 
     deleteNode: deleteNodeFromDb,
@@ -169,6 +170,57 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     }
     return features;
   };
+
+  // HTML을 썸네일 이미지로 변환
+  const captureHtmlThumbnail = useCallback(async (html: string): Promise<string | null> => {
+    try {
+      // Create a hidden iframe to render the HTML
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.left = '-9999px';
+      iframe.style.width = '1440px';
+      iframe.style.height = '900px';
+      iframe.style.border = 'none';
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) {
+        document.body.removeChild(iframe);
+        return null;
+      }
+
+      iframeDoc.open();
+      iframeDoc.write(html);
+      iframeDoc.close();
+
+      // Wait for content to render
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Use html2canvas if available, otherwise create a simple preview
+      try {
+        const html2canvas = (await import('html2canvas')).default;
+        const canvas = await html2canvas(iframeDoc.body, {
+          width: 1440,
+          height: 900,
+          scale: 0.25, // 360x225 thumbnail
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+        });
+        
+        const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.7);
+        document.body.removeChild(iframe);
+        return thumbnailUrl;
+      } catch (e) {
+        console.error('html2canvas failed:', e);
+        document.body.removeChild(iframe);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error capturing thumbnail:', error);
+      return null;
+    }
+  }, []);
 
   const handleSendMessage = async (content: string, images: string[], model: ModelType) => {
     const userMsg: Message = {
@@ -345,11 +397,36 @@ Return the COMPLETE HTML with this single element modified.
         features
       });
 
+      const finalNode: DesignNode = {
+        id: targetNodeId,
+        type: 'component',
+        title: componentTitle,
+        html: cleanHtml,
+        x: nodes.find(n => n.id === targetNodeId)?.x || 0,
+        y: nodes.find(n => n.id === targetNodeId)?.y || 0,
+        width: nodes.find(n => n.id === targetNodeId)?.width || 1440,
+        height: nodes.find(n => n.id === targetNodeId)?.height || 900,
+      };
+
       setNodes(currentNodes => currentNodes.map(n => 
-        n.id === targetNodeId 
-          ? { ...n, html: cleanHtml, title: componentTitle } 
-          : n
+        n.id === targetNodeId ? finalNode : n
       ));
+
+      // Auto-save the generated node
+      if (project) {
+        saveNode(finalNode);
+        
+        // Capture and save thumbnail for the first node
+        const currentNodes = nodes.filter(n => n.id !== targetNodeId);
+        if (currentNodes.length === 0 && cleanHtml) {
+          setTimeout(async () => {
+            const thumbnail = await captureHtmlThumbnail(cleanHtml);
+            if (thumbnail) {
+              updateProjectThumbnail(thumbnail);
+            }
+          }, 1000);
+        }
+      }
 
       setMessages(prev => prev.map(msg => 
         msg.id === botMsgId 

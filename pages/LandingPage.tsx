@@ -7,9 +7,10 @@ import logoDark from '../img/logo_darkmode.png';
 import { AuthButton } from '../components/AuthButton';
 import { UserMenu } from '../components/UserMenu';
 import { useAuth } from '../contexts/AuthContext';
+import { MyProjectsSection } from '../components/MyProjectsSection';
 
 interface LandingPageProps {
-  onNavigateToEditor: (prompt: string, images?: string[]) => void;
+  onNavigateToEditor: (prompt: string, images?: string[], projectId?: string) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) => {
@@ -94,6 +95,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
     setTimeout(() => {
       onNavigateToEditor(tag, referenceImages);
     }, 100);
+  };
+
+  const handleOpenProject = (projectId: string) => {
+    onNavigateToEditor('', [], projectId);
+  };
+
+  const handleCreateNew = () => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
   };
 
   return (
@@ -275,6 +286,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
           </div>
 
         </div>
+
+        {/* My Projects Section */}
+        {user && (
+          <MyProjectsSection 
+            onOpenProject={handleOpenProject}
+            onCreateNew={handleCreateNew}
+          />
+        )}
 
       </main>
 

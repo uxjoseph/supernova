@@ -25,6 +25,7 @@ interface UseProjectReturn {
   createProject: (name?: string) => Promise<Project | null>;
   loadProject: (projectId: string) => Promise<void>;
   updateProjectName: (name: string) => Promise<void>;
+  updateProjectThumbnail: (thumbnailUrl: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   loadProjects: () => Promise<void>;
   saveNode: (node: DesignNode) => void;
@@ -141,6 +142,27 @@ export const useProject = (): UseProjectReturn => {
       );
     } catch (error) {
       console.error('Error updating project name:', error);
+    }
+  }, [project]);
+
+  // Update project thumbnail
+  const updateProjectThumbnail = useCallback(async (thumbnailUrl: string) => {
+    if (!project || !isSupabaseConfigured()) return;
+
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({ thumbnail_url: thumbnailUrl })
+        .eq('id', project.id);
+
+      if (error) throw error;
+      
+      setProject(prev => prev ? { ...prev, thumbnail_url: thumbnailUrl } : null);
+      setProjects(prev => 
+        prev.map(p => p.id === project.id ? { ...p, thumbnail_url: thumbnailUrl } : p)
+      );
+    } catch (error) {
+      console.error('Error updating project thumbnail:', error);
     }
   }, [project]);
 
@@ -306,6 +328,7 @@ export const useProject = (): UseProjectReturn => {
     createProject,
     loadProject,
     updateProjectName,
+    updateProjectThumbnail,
     deleteProject,
     loadProjects,
     saveNode,
