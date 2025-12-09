@@ -135,6 +135,8 @@ class CreditService {
 
   // 리스너 알림
   private notifyListeners(): void {
+    console.log('[CreditService] Notifying listeners, count:', this.listeners.size);
+    console.log('[CreditService] Current state:', this.state);
     this.listeners.forEach(listener => listener(this.state));
   }
 
@@ -198,6 +200,10 @@ class CreditService {
     };
 
     saveState(this.state);
+    
+    console.log('[CreditService] Credits deducted:', usage.creditsUsed);
+    console.log('[CreditService] New state:', this.state);
+    
     this.notifyListeners();
 
     return usage;

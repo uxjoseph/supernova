@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import type { Project, CanvasNode, ChatMessage } from '../types/database';
-import type { DesignNode, Message, Role } from '../types';
+import type { DesignNode, Message } from '../types';
+import { Role } from '../types';
 import { syncPublishedPage } from '../services/publishService';
 
 // Debounce helper

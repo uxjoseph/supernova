@@ -2140,8 +2140,20 @@ const TabBarCreditDisplay: React.FC = () => {
 
   // 크레딧 상태 구독
   useEffect(() => {
-    const unsubscribe = creditService.subscribe(setCreditState);
-    return () => unsubscribe();
+    console.log('[TabBarCredit] Subscribing to credit service');
+    
+    // 즉시 최신 상태로 초기화
+    setCreditState(creditService.getState());
+    
+    const unsubscribe = creditService.subscribe((newState) => {
+      console.log('[TabBarCredit] Credit state updated:', newState);
+      setCreditState(newState);
+    });
+    
+    return () => {
+      console.log('[TabBarCredit] Unsubscribing from credit service');
+      unsubscribe();
+    };
   }, []);
 
   // 리셋 시간 업데이트
