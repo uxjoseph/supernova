@@ -179,13 +179,17 @@ const PreviewTabContent: React.FC<PreviewTabContentProps> = ({ node, onCopyToFig
       </div>
       
       {/* Preview Content */}
-      <div className="flex-1 overflow-auto p-6 flex items-start justify-center bg-gray-100">
+      <div className={`flex-1 overflow-auto flex items-start justify-center ${viewMode === 'desktop' ? 'bg-white' : 'bg-gray-100 p-6'}`}>
         <div 
-          className={`bg-white shadow-2xl rounded-lg overflow-hidden transition-all duration-300 ${viewMode !== 'desktop' ? 'border border-gray-200' : ''}`}
+          className={`bg-white overflow-hidden transition-all duration-300 ${
+            viewMode === 'desktop' 
+              ? 'w-full h-full' 
+              : 'shadow-2xl rounded-lg border border-gray-200'
+          }`}
           style={{ 
-            width: viewportWidths[viewMode],
-            maxWidth: '100%',
-            height: viewMode === 'desktop' ? 'calc(100% - 48px)' : 'auto',
+            width: viewMode === 'desktop' ? '100%' : viewportWidths[viewMode],
+            maxWidth: viewMode === 'desktop' ? '100%' : '100%',
+            height: viewMode === 'desktop' ? '100%' : 'auto',
             minHeight: viewMode !== 'desktop' ? '80vh' : undefined
           }}
         >
@@ -298,6 +302,9 @@ export const Canvas: React.FC<CanvasProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map());
 
+  // 완성된 HTML 캐시 - 깜빡임 방지를 위해 완성된 HTML만 저장
+  const [completedHtmlCache, setCompletedHtmlCache] = useState<Map<string, string>>(new Map());
+
   // Store current scale and position in refs for native event handler
   const scaleRef = useRef(scale);
   const positionRef = useRef(position);
@@ -372,6 +379,41 @@ export const Canvas: React.FC<CanvasProps> = ({
     if (!html || html.length < 50) return false;
     const lowerHtml = html.toLowerCase();
     return lowerHtml.includes('</html>') || lowerHtml.includes('</body>');
+  };
+
+  // 완성된 HTML을 캐시에 저장 (깜빡임 방지)
+  useEffect(() => {
+    nodes.forEach(node => {
+      if (node.type === 'component' && node.html && isHtmlComplete(node.html)) {
+        setCompletedHtmlCache(prev => {
+          const newCache = new Map(prev);
+          // 새로운 완성된 HTML이 기존과 다를 때만 업데이트
+          if (newCache.get(node.id) !== node.html) {
+            newCache.set(node.id, node.html);
+          }
+          return newCache;
+        });
+      }
+    });
+  }, [nodes]);
+
+  // 노드별로 표시할 HTML 결정 (완성된 것 또는 캐시된 것)
+  const getDisplayHtml = (node: DesignNode): string | null => {
+    if (!node.html) return null;
+    
+    // HTML이 완성되었으면 현재 HTML 사용
+    if (isHtmlComplete(node.html)) {
+      return node.html;
+    }
+    
+    // 완성되지 않았으면 캐시된 완성 버전 사용 (있으면)
+    const cachedHtml = completedHtmlCache.get(node.id);
+    if (cachedHtml) {
+      return cachedHtml;
+    }
+    
+    // 캐시도 없으면 null (스켈레톤 표시)
+    return null;
   };
 
   // Inject interaction script into HTML
@@ -1321,46 +1363,65 @@ export const Canvas: React.FC<CanvasProps> = ({
                   {/* 컴포넌트 (HTML) 타입 */}
                   {node.type === 'component' && (
                     <>
-                      {node.html && canRenderHtml(node.html) ? (
-                        <>
-                          <iframe 
-                            ref={el => {
-                                if (el) iframeRefs.current.set(node.id, el);
-                                else iframeRefs.current.delete(node.id);
-                            }}
-                            data-node-id={node.id}
-                            srcDoc={getInteractableHtml(node.html, node.id)}
-                            className="w-full h-full border-none pointer-events-auto"
-                            title={`preview-${node.id}`}
-                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-                          />
-                          {/* 생성 중 오버레이 - HTML이 완전하지 않을 때만 표시 */}
-                          {!isHtmlComplete(node.html) && (
-                            <div className="absolute bottom-4 left-4 z-40 pointer-events-none">
-                              <div className="bg-black/80 backdrop-blur-sm text-white px-3 py-2 rounded-lg flex items-center gap-2 shadow-lg">
-                                <div className="flex items-center gap-1">
-                                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
-                                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.15s' }}></div>
-                                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.3s' }}></div>
+                      {(() => {
+                        const displayHtml = getDisplayHtml(node);
+                        const isGenerating = node.html && !isHtmlComplete(node.html);
+                        
+                        if (displayHtml) {
+                          return (
+                            <div className="w-full h-full relative">
+                              <iframe 
+                                ref={el => {
+                                    if (el) iframeRefs.current.set(node.id, el);
+                                    else iframeRefs.current.delete(node.id);
+                                }}
+                                key={`iframe-${node.id}-${isHtmlComplete(node.html || '') ? 'complete' : 'cached'}`}
+                                data-node-id={node.id}
+                                srcDoc={getInteractableHtml(displayHtml, node.id)}
+                                className={`w-full h-full border-none pointer-events-auto transition-opacity duration-300 ${isGenerating ? 'opacity-60' : 'opacity-100'}`}
+                                title={`preview-${node.id}`}
+                                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                              />
+                              {/* 생성 중 오버레이 */}
+                              {isGenerating && (
+                                <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center bg-white/20 backdrop-blur-[1px]">
+                                  <div className="bg-black/90 backdrop-blur-sm text-white px-4 py-3 rounded-xl flex items-center gap-3 shadow-2xl">
+                                    <div className="relative w-5 h-5">
+                                      <div className="absolute inset-0 rounded-full border-2 border-white/20"></div>
+                                      <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-white animate-spin"></div>
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-semibold">페이지 생성 중</span>
+                                      <span className="text-[10px] text-white/60">잠시만 기다려주세요...</span>
+                                    </div>
+                                  </div>
                                 </div>
-                                <span className="text-xs font-medium">생성 중...</span>
+                              )}
+                            </div>
+                          );
+                        }
+                        
+                        // 아직 완성된 HTML이 없을 때 - 세련된 스켈레톤 표시
+                        return (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 text-gray-400">
+                            <div className="relative mb-6">
+                              <div className="w-16 h-16 rounded-2xl bg-white shadow-lg flex items-center justify-center">
+                                <Layout size={28} className="text-gray-300" />
+                              </div>
+                              <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-black rounded-lg flex items-center justify-center shadow-lg">
+                                <div className="w-3 h-3 rounded-full border-2 border-transparent border-t-white animate-spin"></div>
                               </div>
                             </div>
-                          )}
-                        </>
-                      ) : (
-                         <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 text-gray-300">
-                            <Layout size={48} className="mb-4 opacity-20" />
-                            <span className="text-sm font-medium">페이지 생성 대기 중...</span>
-                            {node.html && (
-                              <div className="mt-2 flex items-center gap-1.5">
-                                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
-                                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse delay-100"></div>
-                                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse delay-200"></div>
-                              </div>
-                            )}
-                         </div>
-                       )}
+                            <span className="text-sm font-semibold text-gray-600 mb-1">페이지 생성 중</span>
+                            <span className="text-xs text-gray-400">AI가 코드를 작성하고 있습니다...</span>
+                            
+                            {/* 진행 바 애니메이션 */}
+                            <div className="mt-6 w-48 h-1 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-gradient-to-r from-gray-400 to-gray-600 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                   

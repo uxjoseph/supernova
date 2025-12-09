@@ -48,6 +48,9 @@ export interface Message {
   // 새로운 생성 UI를 위한 필드
   generationSections?: GenerationSection[];
   componentTitle?: string;
+  // 크레딧 사용량 (AI 응답에만 해당)
+  creditsUsed?: number;
+  tokenUsage?: TokenUsageMetadata;
 }
 
 export type NodeType = 'component' | 'image' | 'note';
@@ -112,3 +115,53 @@ export const VARIANT_QUICK_TAGS = [
   { id: 'gradient', label: '그라디언트', prompt: '그라디언트 배경과 요소를 활용해주세요. 부드러운 색상 전환 효과.' },
   { id: 'glassmorphism', label: '글래스모피즘', prompt: '글래스모피즘 효과를 적용해주세요. 반투명 배경, 블러, 미묘한 테두리.' },
 ] as const;
+
+// ============================================
+// 크레딧/토큰 시스템 타입
+// ============================================
+
+export type CreditUsageType = 'chat' | 'generation';
+
+export interface CreditUsage {
+  id: string;
+  type: CreditUsageType;
+  inputTokens: number;
+  outputTokens: number;
+  creditsUsed: number;
+  description: string;
+  timestamp: number;
+  messageId?: string; // 연결된 메시지 ID
+}
+
+export interface CreditState {
+  dailyCredits: number;       // 일일 총 크레딧 (100)
+  usedCredits: number;        // 사용한 크레딧
+  remainingCredits: number;   // 남은 크레딧
+  chatCredits: number;        // 대화에 사용한 크레딧
+  generationCredits: number;  // 생성에 사용한 크레딧
+  resetTime: number;          // 다음 리셋 시간 (timestamp)
+  lastResetTime: number;      // 마지막 리셋 시간
+  history: CreditUsage[];     // 사용 내역
+}
+
+// 크레딧 시스템 상수
+export const CREDIT_CONFIG = {
+  DAILY_CREDITS: 100,           // 일일 크레딧
+  TOKENS_PER_CREDIT: 1000,      // 1 크레딧 = 1,000 토큰
+  RESET_INTERVAL_MS: 24 * 60 * 60 * 1000, // 24시간
+  MAX_HISTORY_ITEMS: 50,        // 최대 히스토리 저장 개수
+} as const;
+
+// Gemini API 토큰 사용량 메타데이터
+export interface TokenUsageMetadata {
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  totalTokenCount: number;
+}
+
+// 생성 결과에 포함될 토큰 정보
+export interface GenerationResult {
+  html: string;
+  tokenUsage?: TokenUsageMetadata;
+  creditsUsed?: number;
+}

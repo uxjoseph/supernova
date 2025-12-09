@@ -3,7 +3,8 @@ import { Sidebar } from '../components/Sidebar';
 import { Canvas } from '../components/Canvas';
 import { PanelLeftOpen, ArrowLeft, Cloud, CloudOff, Check } from 'lucide-react';
 import { Message, Role, DesignNode, FileArtifact, GenerationSection, VariantCreationState, PreviewTab, SelectedElement } from '../types';
-import { generateDesignStream, extractHtml, ModelType } from '../services/geminiService';
+import { generateDesignStream, extractHtml, ModelType, StreamResult } from '../services/geminiService';
+import { tokensToCredits } from '../services/creditService';
 import { useProject } from '../hooks/useProject';
 import { useCredits } from '../hooks/useCredits';
 import { useAuth } from '../contexts/AuthContext';
@@ -439,7 +440,7 @@ Return the COMPLETE HTML with this single element modified.
         setSelectedElement(null);
       }
       
-      await generateDesignStream(finalPrompt, images, previousCode, model, (chunk) => {
+      const streamResult: StreamResult = await generateDesignStream(finalPrompt, images, previousCode, model, (chunk) => {
          fullResponse += chunk;
          lineCount = (fullResponse.match(/\n/g) || []).length;
          
@@ -455,6 +456,9 @@ Return the COMPLETE HTML with this single element modified.
            lastUpdateTime = now;
          }
       });
+
+      // 토큰 사용량에서 크레딧 계산
+      const creditsUsed = tokensToCredits(streamResult.tokenUsage.totalTokenCount);
 
       updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 445 });
       
@@ -517,7 +521,12 @@ Return the COMPLETE HTML with this single element modified.
       setMessages(prev => {
         const updatedMessages = prev.map(msg => 
           msg.id === botMsgId 
-            ? { ...msg, isThinking: false }
+            ? { 
+                ...msg, 
+                isThinking: false,
+                creditsUsed: Math.round(creditsUsed * 100) / 100,
+                tokenUsage: streamResult.tokenUsage
+              }
             : msg
         );
         
@@ -717,7 +726,7 @@ Return the COMPLETE HTML with this single element modified.
       let fullResponse = '';
       let lineCount = 0;
       
-      await generateDesignStream(prompt, [], sourceNode.html, model, (chunk) => {
+      const variantResult: StreamResult = await generateDesignStream(prompt, [], sourceNode.html, model, (chunk) => {
         fullResponse += chunk;
         lineCount = (fullResponse.match(/\n/g) || []).length;
         
@@ -729,6 +738,8 @@ Return the COMPLETE HTML with this single element modified.
         
         updateFileInSection(botMsgId, 'files', 'component', { linesAdded: lineCount });
       });
+
+      const variantCreditsUsed = tokensToCredits(variantResult.tokenUsage.totalTokenCount);
 
       updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 400 });
       updateSection(botMsgId, 'files', { status: 'completed' });
@@ -765,7 +776,12 @@ Return the COMPLETE HTML with this single element modified.
       setMessages(prev => {
         const updatedMessages = prev.map(msg => 
           msg.id === botMsgId 
-            ? { ...msg, isThinking: false }
+            ? { 
+                ...msg, 
+                isThinking: false,
+                creditsUsed: Math.round(variantCreditsUsed * 100) / 100,
+                tokenUsage: variantResult.tokenUsage
+              }
             : msg
         );
         
@@ -887,7 +903,7 @@ Return the COMPLETE HTML with this single element modified.
       let fullResponse = '';
       let lineCount = 0;
       
-      await generateDesignStream(prompt, [], variantState.sourceNodeHtml, model, (chunk) => {
+      const variantStreamResult: StreamResult = await generateDesignStream(prompt, [], variantState.sourceNodeHtml, model, (chunk) => {
         fullResponse += chunk;
         lineCount = (fullResponse.match(/\n/g) || []).length;
         
@@ -899,6 +915,8 @@ Return the COMPLETE HTML with this single element modified.
         
         updateFileInSection(botMsgId, 'files', 'component', { linesAdded: lineCount });
       });
+
+      const variantCredits = tokensToCredits(variantStreamResult.tokenUsage.totalTokenCount);
 
       updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 400 });
       updateSection(botMsgId, 'files', { status: 'completed' });
@@ -939,7 +957,12 @@ Return the COMPLETE HTML with this single element modified.
       setMessages(prev => {
         const updatedMessages = prev.map(msg => 
           msg.id === botMsgId 
-            ? { ...msg, isThinking: false }
+            ? { 
+                ...msg, 
+                isThinking: false,
+                creditsUsed: Math.round(variantCredits * 100) / 100,
+                tokenUsage: variantStreamResult.tokenUsage
+              }
             : msg
         );
         

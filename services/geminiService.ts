@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { DESIGN_SYSTEM_GUIDE, LANDING_PAGE_TEMPLATE } from "../designSystem";
+import { TokenUsageMetadata, GenerationResult } from "../types";
 
 // Initialize Gemini Client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || process.env.GEMINI_API_KEY || '' });
@@ -64,13 +65,19 @@ const IMAGE_REFERENCE_INSTRUCTION = `
 
 export type ModelType = 'pro' | 'fast';
 
+// 스트리밍 결과 타입
+export interface StreamResult {
+  text: string;
+  tokenUsage: TokenUsageMetadata;
+}
+
 export const generateDesignStream = async (
   prompt: string,
   images: string[], // 여러 이미지 지원
   previousCode: string | undefined,
   modelType: ModelType,
   onChunk: (text: string) => void
-): Promise<string> => {
+): Promise<StreamResult> => {
   try {
     let finalPrompt = prompt;
     
@@ -162,14 +169,33 @@ export const generateDesignStream = async (
     });
 
     let fullText = '';
+    let tokenUsage: TokenUsageMetadata = {
+      promptTokenCount: 0,
+      candidatesTokenCount: 0,
+      totalTokenCount: 0,
+    };
+
     for await (const chunk of responseStream) {
       const text = chunk.text;
       if (text) {
         fullText += text;
         onChunk(text);
       }
+      
+      // 토큰 사용량 업데이트 (마지막 청크에 포함됨)
+      if (chunk.usageMetadata) {
+        tokenUsage = {
+          promptTokenCount: chunk.usageMetadata.promptTokenCount || 0,
+          candidatesTokenCount: chunk.usageMetadata.candidatesTokenCount || 0,
+          totalTokenCount: chunk.usageMetadata.totalTokenCount || 0,
+        };
+      }
     }
-    return fullText;
+
+    return {
+      text: fullText,
+      tokenUsage,
+    };
   } catch (error) {
     console.error("Gemini API Error:", error);
     throw error;

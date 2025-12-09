@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Sparkles, Plus, Zap, Component, Brain, CheckCircle2, Loader2, ChevronDown, ChevronRight, FileJson, FileCode, FileText, X, Image as ImageIcon, Atom, Package, FileType, Settings2, Wrench, ArrowLeft, Wand2, Layout, Home, Settings, Edit2, PanelLeftClose } from 'lucide-react';
 import { Message, Role, DesignNode, GenerationSection, FileArtifact, VariantCreationState, VARIANT_QUICK_TAGS, SelectedElement } from '../types';
 import { ModelType } from '../services/geminiService';
+import { CreditWidget } from './CreditWidget';
 
 interface SidebarProps {
   width: number;
@@ -237,6 +238,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (path.endsWith('.ts')) return <FileCode size={14} className="text-blue-400" />;
     if (path.endsWith('.md')) return <FileType size={14} className="text-gray-400" />;
     return <FileText size={14} className="text-gray-400" />;
+  };
+
+  // 메시지 시간 경과 표시
+  const getMessageTimeAgo = (timestamp: number): string => {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    
+    if (seconds < 60) return '방금 전';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`;
+    return `${Math.floor(seconds / 86400)}일 전`;
   };
 
   // Section row component with smooth animations
@@ -571,6 +582,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
+      {/* Credit Widget Section */}
+      <div className="flex-shrink-0 border-b border-gray-100 bg-white px-4 py-3">
+        <CreditWidget />
+      </div>
+
       {/* Layers / Components Section */}
       <div className="flex-shrink-0 border-b border-gray-100 bg-white max-h-[150px] overflow-y-auto">
         <div className="px-4 py-3">
@@ -657,6 +673,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     : 'bg-transparent text-gray-800 px-0 shadow-none'
                 }`}>
                     <div className="whitespace-pre-wrap">{msg.content}</div>
+                </div>
+              )}
+
+              {/* 크레딧 사용량 표시 (AI 응답에만) */}
+              {msg.role === Role.MODEL && msg.creditsUsed !== undefined && msg.creditsUsed > 0 && (
+                <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400">
+                  <span className="tabular-nums font-medium">{msg.creditsUsed.toFixed(2)} credits</span>
+                  <span>·</span>
+                  <span>{getMessageTimeAgo(msg.timestamp)}</span>
                 </div>
               )}
             </div>
