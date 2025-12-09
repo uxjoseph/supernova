@@ -13,6 +13,7 @@ interface EditorPageProps {
   initialPrompt?: string;
   initialImages?: string[];
   initialProjectId?: string;
+  initialModelType?: ModelType;
   onNavigateBack: () => void;
 }
 
@@ -20,6 +21,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
   initialPrompt, 
   initialImages = [],
   initialProjectId,
+  initialModelType,
   onNavigateBack 
 }) => {
   const [sidebarWidth, setSidebarWidth] = useState(360);
@@ -567,11 +569,11 @@ Return the COMPLETE HTML with this single element modified.
       // 약간의 딜레이 후 생성 시작 (cleanup에서 취소하지 않음)
       setTimeout(() => {
         if (handleSendMessageRef.current) {
-          handleSendMessageRef.current(initialPrompt, initialImages, 'pro');
+          handleSendMessageRef.current(initialPrompt, initialImages, initialModelType || 'fast');
         }
       }, 300);
     }
-  }, [initialPrompt, initialImages]);
+  }, [initialPrompt, initialImages, initialModelType]);
 
   const handleUpdateNode = (updatedNode: DesignNode) => {
     setNodes(prev => prev.map(n => n.id === updatedNode.id ? updatedNode : n));

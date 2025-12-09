@@ -324,6 +324,9 @@ export const Canvas: React.FC<CanvasProps> = ({
   // Store current scale and position in refs for native event handler
   const scaleRef = useRef(scale);
   const positionRef = useRef(position);
+  
+  // 이미 처리한 focusTrigger timestamp 추적 (중복 포커스 방지)
+  const lastFocusTimestampRef = useRef<number>(0);
 
   // Listen for messages from iframes
   useEffect(() => {
@@ -829,40 +832,46 @@ export const Canvas: React.FC<CanvasProps> = ({
     }
   }, [toastMessage]);
 
-  // Focus Logic - nodes 추가하여 노드 생성 후 포커스 동작 보장
+  // Focus Logic - focusTrigger가 새로 설정될 때만 한 번 실행 (생성 중 반복 포커스 방지)
   useEffect(() => {
-    if (focusTrigger && containerRef.current) {
-      const node = nodes.find(n => n.id === focusTrigger.id);
+    if (!focusTrigger || !containerRef.current) return;
+    
+    // 이미 처리한 트리거인지 확인 (timestamp로 중복 방지)
+    if (focusTrigger.timestamp <= lastFocusTimestampRef.current) return;
+    
+    const node = nodes.find(n => n.id === focusTrigger.id);
+    
+    if (node) {
+      // 이 트리거를 처리했음을 기록
+      lastFocusTimestampRef.current = focusTrigger.timestamp;
       
-      if (node) {
-        onSelectNode(node.id); // Also select it
-        const { clientWidth, clientHeight } = containerRef.current;
-        
-        // Calculate fit scale with comfortable padding
-        const padding = 100; // More breathing room
-        const availableWidth = clientWidth - padding;
-        const availableHeight = clientHeight - padding;
-        
-        const scaleX = availableWidth / node.width;
-        const scaleY = availableHeight / node.height;
-        
-        // Fit entire node into view, max 0.85 to avoid being too overwhelming
-        let newScale = Math.min(scaleX, scaleY, 0.85);
-        
-        // Ensure reasonable limits
-        newScale = Math.max(0.1, newScale);
-        
-        const nodeCenterX = node.x + node.width / 2;
-        const nodeCenterY = node.y + node.height / 2;
-        
-        const newX = clientWidth / 2 - nodeCenterX * newScale;
-        const newY = clientHeight / 2 - nodeCenterY * newScale;
+      onSelectNode(node.id); // Also select it
+      const { clientWidth, clientHeight } = containerRef.current;
+      
+      // Calculate fit scale with comfortable padding
+      const padding = 100; // More breathing room
+      const availableWidth = clientWidth - padding;
+      const availableHeight = clientHeight - padding;
+      
+      const scaleX = availableWidth / node.width;
+      const scaleY = availableHeight / node.height;
+      
+      // Fit entire node into view, max 0.85 to avoid being too overwhelming
+      let newScale = Math.min(scaleX, scaleY, 0.85);
+      
+      // Ensure reasonable limits
+      newScale = Math.max(0.1, newScale);
+      
+      const nodeCenterX = node.x + node.width / 2;
+      const nodeCenterY = node.y + node.height / 2;
+      
+      const newX = clientWidth / 2 - nodeCenterX * newScale;
+      const newY = clientHeight / 2 - nodeCenterY * newScale;
 
-        setScale(newScale);
-        setPosition({ x: newX, y: newY });
-      }
+      setScale(newScale);
+      setPosition({ x: newX, y: newY });
     }
-  }, [focusTrigger, nodes]); // nodes 의존성 추가 
+  }, [focusTrigger, nodes]); // nodes는 노드 생성 직후 포커스를 위해 필요
 
 
   // --- Interaction Handlers ---
@@ -2114,16 +2123,6 @@ export const Canvas: React.FC<CanvasProps> = ({
                     </div>
                 </div>
             </div>
-        </div>
-      )}
-
-      {/* Loading Indicator */}
-      {isLoading && (
-        <div className="absolute top-4 right-4 z-50 canvas-ui">
-          <div className="bg-white/90 backdrop-blur border border-indigo-100 shadow-lg px-4 py-3 rounded-xl flex items-center gap-3 animate-in slide-in-from-top-2">
-            <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span></span>
-            <span className="text-sm font-medium text-indigo-900">페이지 생성 중...</span>
-          </div>
         </div>
       )}
 

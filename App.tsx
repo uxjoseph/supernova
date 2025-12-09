@@ -4,6 +4,7 @@ import { LandingPage } from './pages/LandingPage';
 import { EditorPage } from './pages/EditorPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { PublishedPage } from './pages/PublishedPage';
+import { ModelType } from './services/geminiService';
 
 type Page = 'landing' | 'editor' | 'settings' | 'published';
 
@@ -11,6 +12,7 @@ interface EditorState {
   prompt: string;
   images: string[];
   projectId?: string;
+  modelType?: ModelType;
 }
 
 // Simple URL-based routing helper
@@ -51,11 +53,12 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handleRoute);
   }, []);
 
-  const handleNavigateToEditor = (prompt: string, images?: string[], projectId?: string) => {
+  const handleNavigateToEditor = (prompt: string, images?: string[], projectId?: string, modelType?: ModelType) => {
     setEditorState({
       prompt,
       images: images || [],
-      projectId
+      projectId,
+      modelType
     });
     setCurrentPage('editor');
     // Update URL without /p/
@@ -98,6 +101,7 @@ const AppContent: React.FC = () => {
       initialPrompt={editorState?.prompt}
       initialImages={editorState?.images}
       initialProjectId={editorState?.projectId}
+      initialModelType={editorState?.modelType}
       onNavigateBack={handleNavigateToLanding}
     />
   );

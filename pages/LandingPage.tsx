@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowUp, Image as ImageIcon, Paperclip, Moon, Sun, Globe, X } from 'lucide-react';
+import { ArrowUp, Image as ImageIcon, Paperclip, Moon, Sun, Globe, X, Zap, Sparkles } from 'lucide-react';
 import { Language, detectLanguage, getTranslation } from '../i18n';
 import logoLight from '../img/logo_lightmode.png';
 import logoDark from '../img/logo_darkmode.png';
@@ -8,9 +8,10 @@ import { AuthButton } from '../components/AuthButton';
 import { UserMenu } from '../components/UserMenu';
 import { useAuth } from '../contexts/AuthContext';
 import { MyProjectsSection } from '../components/MyProjectsSection';
+import { ModelType } from '../services/geminiService';
 
 interface LandingPageProps {
-  onNavigateToEditor: (prompt: string, images?: string[], projectId?: string) => void;
+  onNavigateToEditor: (prompt: string, images?: string[], projectId?: string, modelType?: ModelType) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) => {
@@ -27,6 +28,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
   
   const [input, setInput] = useState('');
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<ModelType>('fast');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,7 +67,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
 
   const handleSubmit = () => {
     if (!input.trim()) return;
-    onNavigateToEditor(input.trim(), referenceImages);
+    onNavigateToEditor(input.trim(), referenceImages, undefined, selectedModel);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -92,9 +94,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
 
   const handleTagClick = (tag: string) => {
     setInput(tag);
-    setTimeout(() => {
-      onNavigateToEditor(tag, referenceImages);
-    }, 100);
+    // textarea에 포커스
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
   };
 
   const handleOpenProject = (projectId: string) => {
@@ -224,16 +227,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
               </div>
 
               <div className="px-4 pb-4 flex items-center justify-between">
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
+                  {/* 이미지 업로드 버튼 */}
                   <button 
                     onClick={() => fileInputRef.current?.click()}
                     className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     title="참조 이미지 추가"
                   >
                     <ImageIcon size={18} />
-                  </button>
-                  <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                    <Paperclip size={18} />
                   </button>
                   <input 
                     ref={fileInputRef}
@@ -243,6 +244,37 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
                     onChange={handleImageUpload}
                     className="hidden"
                   />
+                  
+                  {/* 구분선 */}
+                  <div className="h-5 w-px bg-gray-200 dark:bg-gray-700" />
+                  
+                  {/* 모델 선택 토글 */}
+                  <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+                    <button
+                      onClick={() => setSelectedModel('fast')}
+                      className={`
+                        flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200
+                        ${selectedModel === 'fast' 
+                          ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' 
+                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}
+                      `}
+                    >
+                      <Zap size={14} />
+                      <span>Flash</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedModel('pro')}
+                      className={`
+                        flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200
+                        ${selectedModel === 'pro' 
+                          ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' 
+                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}
+                      `}
+                    >
+                      <Sparkles size={14} />
+                      <span>Pro</span>
+                    </button>
+                  </div>
                 </div>
 
                 <button 
