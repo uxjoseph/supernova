@@ -3,13 +3,11 @@ import { DESIGN_SYSTEM_GUIDE, LANDING_PAGE_TEMPLATE } from "../designSystem";
 import { TokenUsageMetadata, GenerationResult } from "../types";
 
 // Initialize Gemini Client
-// 로컬 개발: process.env (vite.config.ts에서 define으로 설정)
-// 프로덕션: import.meta.env (Vercel 환경 변수)
+// vite.config.ts에서 process.env.GEMINI_API_KEY로 주입됨
+// 로컬: .env 파일의 GEMINI_API_KEY
+// Vercel: 환경 변수의 GEMINI_API_KEY
 const ai = new GoogleGenAI({ 
-  apiKey: (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) 
-    || import.meta.env.VITE_GEMINI_API_KEY 
-    || import.meta.env.VITE_API_KEY 
-    || '' 
+  apiKey: process.env.GEMINI_API_KEY || '' 
 });
 
 const DEFAULT_SYSTEM_INSTRUCTION = `
