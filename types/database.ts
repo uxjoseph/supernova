@@ -51,6 +51,19 @@ export interface CreditUsage {
   created_at: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  project_id: string;
+  role: 'user' | 'model';
+  content: string | null;
+  image_url: string | null;
+  image_urls: string[] | null;
+  component_title: string | null;
+  is_thinking: boolean;
+  generation_sections: any | null; // JSON type for GenerationSection[]
+  created_at: string;
+}
+
 // Supabase Database interface for type-safe queries
 export interface Database {
   public: {
@@ -87,6 +100,13 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Omit<CreditUsage, 'id'>>;
+      };
+      chat_messages: {
+        Row: ChatMessage;
+        Insert: Omit<ChatMessage, 'created_at'> & {
+          created_at?: string;
+        };
+        Update: Partial<Omit<ChatMessage, 'id'>>;
       };
     };
   };

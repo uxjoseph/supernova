@@ -695,7 +695,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               value={variantPrompt}
               onChange={(e) => setVariantPrompt(e.target.value)}
               placeholder="예: 다크 테마로 변경하고, 히어로 섹션에 애니메이션 추가..."
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 resize-none h-24 placeholder-gray-400 leading-relaxed transition-all"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 resize-none h-24 placeholder-gray-400 focus:placeholder-transparent leading-relaxed transition-all"
               disabled={isGenerating}
             />
           </div>
@@ -898,7 +898,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }}
               onPaste={handlePaste}
               placeholder={selectedElement ? `선택된 <${selectedElement.tagName.toLowerCase()}>를 어떻게 수정할까요?` : selectedNode ? "선택된 페이지를 어떻게 수정할까요?" : "원하는 디자인을 설명해주세요..."}
-              className="w-full bg-transparent border-none px-4 pt-4 pb-2 text-sm focus:outline-none resize-none min-h-[56px] max-h-32 placeholder-gray-400 leading-relaxed"
+              className="w-full bg-transparent border-none px-4 pt-4 pb-2 text-sm text-gray-900 focus:outline-none resize-none min-h-[56px] max-h-32 placeholder-gray-400 focus:placeholder-transparent leading-relaxed transition-all"
               disabled={isGenerating}
             />
             

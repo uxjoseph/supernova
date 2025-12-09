@@ -42,7 +42,10 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     loadNodes,
     isSaving,
     lastSaved,
-    setProject 
+    setProject,
+    saveMessage,
+    loadMessages,
+    updateMessage
   } = useProject();
   const { deductCredits, hasEnoughCredits } = useCredits();
   
@@ -129,25 +132,42 @@ export const EditorPage: React.FC<EditorPageProps> = ({
   const [isLoadingProject, setIsLoadingProject] = useState(!!initialProjectId);
   const nodesLoadedRef = useRef(false);
   
-  // 기존 프로젝트 노드 로드 - 처음 한 번만 실행
+  // 기존 프로젝트 노드 및 메시지 로드 - 처음 한 번만 실행
   useEffect(() => {
     // 이미 로드했으면 스킵
     if (nodesLoadedRef.current) return;
     
     if (project && initialProjectId && project.id === initialProjectId) {
       nodesLoadedRef.current = true;
-      console.log('[EditorPage] Loading nodes for project:', project.id);
+      console.log('[EditorPage] Loading data for project:', project.id);
       setIsLoadingProject(true);
-      loadNodes().then(loadedNodes => {
+      setIsGenerating(false); // 명시적으로 false로 설정
+      
+      // 노드와 메시지를 동시에 로드
+      Promise.all([loadNodes(), loadMessages()]).then(([loadedNodes, loadedMessages]) => {
         console.log('[EditorPage] Loaded nodes:', loadedNodes.length);
+        console.log('[EditorPage] Loaded messages:', loadedMessages.length);
+        
         setNodes(loadedNodes);
+        
+        // 메시지가 있으면 로드, 없으면 기본 메시지 유지
+        if (loadedMessages.length > 0) {
+          // isThinking이 true인 미완료 메시지는 false로 변경
+          const cleanedMessages = loadedMessages.map(msg => ({
+            ...msg,
+            isThinking: false
+          }));
+          setMessages(cleanedMessages);
+        }
+        
         setIsLoadingProject(false);
       }).catch(err => {
-        console.error('[EditorPage] Error loading nodes:', err);
+        console.error('[EditorPage] Error loading project data:', err);
         setIsLoadingProject(false);
+        setIsGenerating(false);
       });
     }
-  }, [project, initialProjectId]);
+  }, [project, initialProjectId, loadNodes, loadMessages]);
   
   // 변종 만들기 상태
   const [variantState, setVariantState] = useState<VariantCreationState>({
@@ -229,53 +249,49 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     return features;
   };
 
-  // HTML을 썸네일 이미지로 변환
-  const captureHtmlThumbnail = useCallback(async (html: string): Promise<string | null> => {
+  // HTML을 썸네일 이미지로 변환 - Canvas에서 렌더링된 iframe을 캡처
+  const captureNodeThumbnail = useCallback(async (nodeId: string): Promise<string | null> => {
     try {
-      // Create a hidden iframe to render the HTML
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'absolute';
-      iframe.style.left = '-9999px';
-      iframe.style.width = '1440px';
-      iframe.style.height = '900px';
-      iframe.style.border = 'none';
-      document.body.appendChild(iframe);
+      console.log('[Thumbnail] Capturing thumbnail for node:', nodeId);
+      
+      // Canvas에서 렌더링된 iframe 찾기
+      const iframe = document.querySelector(`iframe[data-node-id="${nodeId}"]`) as HTMLIFrameElement;
+      
+      if (!iframe) {
+        console.warn('[Thumbnail] Iframe not found for node:', nodeId);
+        return null;
+      }
 
       const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!iframeDoc) {
-        document.body.removeChild(iframe);
+      if (!iframeDoc || !iframeDoc.body) {
+        console.warn('[Thumbnail] Cannot access iframe document');
         return null;
       }
 
-      iframeDoc.open();
-      iframeDoc.write(html);
-      iframeDoc.close();
+      // 렌더링이 완료될 때까지 대기
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
-      // Wait for content to render
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Use html2canvas if available, otherwise create a simple preview
-      try {
-        const html2canvas = (await import('html2canvas')).default;
-        const canvas = await html2canvas(iframeDoc.body, {
-          width: 1440,
-          height: 900,
-          scale: 0.25, // 360x225 thumbnail
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-        });
-        
-        const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.7);
-        document.body.removeChild(iframe);
-        return thumbnailUrl;
-      } catch (e) {
-        console.error('html2canvas failed:', e);
-        document.body.removeChild(iframe);
-        return null;
-      }
+      const html2canvas = (await import('html2canvas')).default;
+      
+      const canvas = await html2canvas(iframeDoc.body, {
+        width: 1440,
+        height: 900,
+        scale: 0.25, // 360x225 thumbnail
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        onclone: (clonedDoc) => {
+          // 클론된 문서에서 스크롤 위치를 최상단으로
+          clonedDoc.body.style.overflow = 'hidden';
+        }
+      });
+      
+      const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.7);
+      console.log('[Thumbnail] Capture successful, size:', thumbnailUrl.length);
+      return thumbnailUrl;
     } catch (error) {
-      console.error('Error capturing thumbnail:', error);
+      console.error('[Thumbnail] Error capturing:', error);
       return null;
     }
   }, []);
@@ -292,6 +308,12 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     
     setMessages(prev => [...prev, userMsg]);
     setIsGenerating(true);
+    
+    // 유저 메시지 저장
+    const currentProjectId = projectIdRef.current || project?.id;
+    if (currentProjectId) {
+      saveMessage(userMsg, currentProjectId);
+    }
 
     const botMsgId = (Date.now() + 1).toString();
     const componentTitle = extractComponentTitle(content);
@@ -478,23 +500,35 @@ Return the COMPLETE HTML with this single element modified.
         
         // Capture and save thumbnail for the first node
         const currentNodes = nodes.filter(n => n.id !== targetNodeId);
-        if (currentNodes.length === 0 && cleanHtml) {
+        if (currentNodes.length === 0) {
+          // 노드가 렌더링된 후 썸네일 캡처 (더 긴 대기 시간)
           setTimeout(async () => {
-            const thumbnail = await captureHtmlThumbnail(cleanHtml);
+            const thumbnail = await captureNodeThumbnail(targetNodeId);
             if (thumbnail) {
+              console.log('[EditorPage] Updating project thumbnail');
               updateProjectThumbnail(thumbnail);
             }
-          }, 1000);
+          }, 2500); // iframe 렌더링 완료 후 캡처
         }
       } else {
         console.warn('[EditorPage] Cannot save: no project ID available');
       }
 
-      setMessages(prev => prev.map(msg => 
-        msg.id === botMsgId 
-          ? { ...msg, isThinking: false }
-          : msg
-      ));
+      setMessages(prev => {
+        const updatedMessages = prev.map(msg => 
+          msg.id === botMsgId 
+            ? { ...msg, isThinking: false }
+            : msg
+        );
+        
+        // 완료된 봇 메시지 저장
+        const completedBotMsg = updatedMessages.find(m => m.id === botMsgId);
+        if (completedBotMsg && currentProjectId) {
+          saveMessage(completedBotMsg, currentProjectId);
+        }
+        
+        return updatedMessages;
+      });
 
     } catch (error: any) {
       console.error('Generation Error:', error);
@@ -620,6 +654,7 @@ Return the COMPLETE HTML with this single element modified.
     if (!sourceNode || !sourceNode.html) return;
 
     const model: ModelType = 'fast';
+    const currentProjectId = projectIdRef.current || project?.id;
     
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -629,6 +664,11 @@ Return the COMPLETE HTML with this single element modified.
     };
     setMessages(prev => [...prev, userMsg]);
     setIsGenerating(true);
+    
+    // 유저 메시지 저장
+    if (currentProjectId) {
+      saveMessage(userMsg, currentProjectId);
+    }
 
     const botMsgId = (Date.now() + 1).toString();
     const variantTitle = `${sourceNode.title} - ${prompt.slice(0, 15)}${prompt.length > 15 ? '...' : ''}`;
@@ -717,17 +757,26 @@ Return the COMPLETE HTML with this single element modified.
       ));
 
       // 변종 노드 저장
-      const currentProjectId = projectIdRef.current || project?.id;
       if (currentProjectId) {
         console.log('[EditorPage] Saving variant node:', newNodeId);
         await saveNodeImmediate(finalVariantNode, currentProjectId);
       }
 
-      setMessages(prev => prev.map(msg => 
-        msg.id === botMsgId 
-          ? { ...msg, isThinking: false }
-          : msg
-      ));
+      setMessages(prev => {
+        const updatedMessages = prev.map(msg => 
+          msg.id === botMsgId 
+            ? { ...msg, isThinking: false }
+            : msg
+        );
+        
+        // 완료된 봇 메시지 저장
+        const completedBotMsg = updatedMessages.find(m => m.id === botMsgId);
+        if (completedBotMsg && currentProjectId) {
+          saveMessage(completedBotMsg, currentProjectId);
+        }
+        
+        return updatedMessages;
+      });
 
     } catch (error) {
       console.error(error);
@@ -748,6 +797,8 @@ Return the COMPLETE HTML with this single element modified.
     
     const sourceNode = nodes.find(n => n.id === variantState.sourceNodeId);
     if (!sourceNode) return;
+    
+    const currentProjectId = projectIdRef.current || project?.id;
 
     setVariantState({
       isActive: false,
@@ -764,6 +815,11 @@ Return the COMPLETE HTML with this single element modified.
     };
     setMessages(prev => [...prev, userMsg]);
     setIsGenerating(true);
+    
+    // 유저 메시지 저장
+    if (currentProjectId) {
+      saveMessage(userMsg, currentProjectId);
+    }
 
     const botMsgId = (Date.now() + 1).toString();
     const variantTitle = `${sourceNode.title} (Variant)`;
@@ -875,17 +931,26 @@ Return the COMPLETE HTML with this single element modified.
       ));
 
       // 변종 노드 저장
-      const currentProjectId = projectIdRef.current || project?.id;
       if (currentProjectId) {
         console.log('[EditorPage] Saving variant node:', newNodeId);
         await saveNodeImmediate(finalVariantNode, currentProjectId);
       }
 
-      setMessages(prev => prev.map(msg => 
-        msg.id === botMsgId 
-          ? { ...msg, isThinking: false }
-          : msg
-      ));
+      setMessages(prev => {
+        const updatedMessages = prev.map(msg => 
+          msg.id === botMsgId 
+            ? { ...msg, isThinking: false }
+            : msg
+        );
+        
+        // 완료된 봇 메시지 저장
+        const completedBotMsg = updatedMessages.find(m => m.id === botMsgId);
+        if (completedBotMsg && currentProjectId) {
+          saveMessage(completedBotMsg, currentProjectId);
+        }
+        
+        return updatedMessages;
+      });
 
     } catch (error) {
       console.error(error);

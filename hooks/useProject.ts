@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import type { Project, CanvasNode } from '../types/database';
-import type { DesignNode } from '../types';
+import type { Project, CanvasNode, ChatMessage } from '../types/database';
+import type { DesignNode, Message, Role } from '../types';
 
 // Debounce helper
 function debounce<T extends (...args: any[]) => any>(
@@ -34,6 +34,11 @@ interface UseProjectReturn {
   deleteNode: (nodeId: string) => Promise<void>;
   loadNodes: () => Promise<DesignNode[]>;
   setProject: (project: Project | null) => void;
+  // Message related
+  saveMessage: (message: Message, projectId?: string) => Promise<void>;
+  saveMessages: (messages: Message[], projectId?: string) => Promise<void>;
+  loadMessages: () => Promise<Message[]>;
+  updateMessage: (message: Message, projectId?: string) => Promise<void>;
 }
 
 export const useProject = (): UseProjectReturn => {
@@ -235,6 +240,32 @@ export const useProject = (): UseProjectReturn => {
     height: node.height,
   });
 
+  // Convert Message to ChatMessage for database
+  const messageToDbMessage = (message: Message, projectId: string): Omit<ChatMessage, 'created_at'> => ({
+    id: message.id,
+    project_id: projectId,
+    role: message.role === Role.USER ? 'user' : 'model',
+    content: message.content || null,
+    image_url: message.imageUrl || null,
+    image_urls: message.imageUrls || null,
+    component_title: message.componentTitle || null,
+    is_thinking: message.isThinking || false,
+    generation_sections: message.generationSections || null,
+  });
+
+  // Convert ChatMessage to Message for app
+  const dbMessageToMessage = (dbMsg: ChatMessage): Message => ({
+    id: dbMsg.id,
+    role: dbMsg.role === 'user' ? Role.USER : Role.MODEL,
+    content: dbMsg.content || '',
+    timestamp: new Date(dbMsg.created_at).getTime(),
+    imageUrl: dbMsg.image_url || undefined,
+    imageUrls: dbMsg.image_urls || undefined,
+    componentTitle: dbMsg.component_title || undefined,
+    isThinking: dbMsg.is_thinking,
+    generationSections: dbMsg.generation_sections || undefined,
+  });
+
   // Current project ID ref for async operations
   const currentProjectIdRef = useRef<string | null>(null);
   
@@ -372,6 +403,90 @@ export const useProject = (): UseProjectReturn => {
     }
   }, [project]);
 
+  // Save a single message
+  const saveMessage = useCallback(async (message: Message, projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid || !isSupabaseConfigured()) {
+      console.warn('[useProject] Cannot save message: no project ID');
+      return;
+    }
+
+    try {
+      const dbMessage = messageToDbMessage(message, pid);
+      const { error } = await supabase
+        .from('chat_messages')
+        .upsert(dbMessage, { onConflict: 'id' });
+
+      if (error) throw error;
+      console.log('[useProject] Message saved:', message.id);
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
+  }, []);
+
+  // Save multiple messages
+  const saveMessages = useCallback(async (messages: Message[], projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid || !isSupabaseConfigured() || messages.length === 0) return;
+
+    try {
+      const dbMessages = messages.map(msg => messageToDbMessage(msg, pid));
+      const { error } = await supabase
+        .from('chat_messages')
+        .upsert(dbMessages, { onConflict: 'id' });
+
+      if (error) throw error;
+      console.log('[useProject] Messages saved:', messages.length);
+    } catch (error) {
+      console.error('Error saving messages:', error);
+    }
+  }, []);
+
+  // Update a message (for updating isThinking, generationSections, etc.)
+  const updateMessage = useCallback(async (message: Message, projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid || !isSupabaseConfigured()) return;
+
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .update({
+          content: message.content || null,
+          is_thinking: message.isThinking || false,
+          generation_sections: message.generationSections || null,
+        })
+        .eq('id', message.id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating message:', error);
+    }
+  }, []);
+
+  // Load all messages for current project
+  const loadMessages = useCallback(async (): Promise<Message[]> => {
+    if (!project || !isSupabaseConfigured()) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        // 테이블이 없을 수 있음 - 빈 배열 반환
+        console.warn('[useProject] Error loading messages (table may not exist):', error.message);
+        return [];
+      }
+      
+      return (data as ChatMessage[]).map(dbMessageToMessage);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      return [];
+    }
+  }, [project]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -403,6 +518,11 @@ export const useProject = (): UseProjectReturn => {
     deleteNode,
     loadNodes,
     setProject,
+    // Message related
+    saveMessage,
+    saveMessages,
+    loadMessages,
+    updateMessage,
   };
 };
 

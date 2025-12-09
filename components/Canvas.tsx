@@ -1328,6 +1328,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                                 if (el) iframeRefs.current.set(node.id, el);
                                 else iframeRefs.current.delete(node.id);
                             }}
+                            data-node-id={node.id}
                             srcDoc={getInteractableHtml(node.html, node.id)}
                             className="w-full h-full border-none pointer-events-auto"
                             title={`preview-${node.id}`}

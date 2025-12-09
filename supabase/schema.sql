@@ -140,7 +140,66 @@ create policy "Users can delete own canvas nodes" on public.canvas_nodes
   );
 
 -- ===========================================
--- 4. CREDIT USAGE TABLE
+-- 4. CHAT MESSAGES TABLE
+-- ===========================================
+create table if not exists public.chat_messages (
+  id text primary key,  -- Client-generated ID
+  project_id uuid references public.projects(id) on delete cascade not null,
+  role text not null check (role in ('user', 'model')),
+  content text,
+  image_url text,
+  image_urls text[],
+  component_title text,
+  is_thinking boolean default false,
+  generation_sections jsonb,
+  created_at timestamp with time zone default now()
+);
+
+-- Enable RLS
+alter table public.chat_messages enable row level security;
+
+-- Users can only access messages in their own projects
+create policy "Users can view own chat messages" on public.chat_messages
+  for select using (
+    exists (
+      select 1 from public.projects 
+      where projects.id = chat_messages.project_id 
+      and projects.user_id = auth.uid()
+    )
+  );
+
+create policy "Users can create chat messages" on public.chat_messages
+  for insert with check (
+    exists (
+      select 1 from public.projects 
+      where projects.id = chat_messages.project_id 
+      and projects.user_id = auth.uid()
+    )
+  );
+
+create policy "Users can update own chat messages" on public.chat_messages
+  for update using (
+    exists (
+      select 1 from public.projects 
+      where projects.id = chat_messages.project_id 
+      and projects.user_id = auth.uid()
+    )
+  );
+
+create policy "Users can delete own chat messages" on public.chat_messages
+  for delete using (
+    exists (
+      select 1 from public.projects 
+      where projects.id = chat_messages.project_id 
+      and projects.user_id = auth.uid()
+    )
+  );
+
+-- Index for performance
+create index if not exists idx_chat_messages_project_id on public.chat_messages(project_id);
+
+-- ===========================================
+-- 5. CREDIT USAGE TABLE
 -- ===========================================
 create table if not exists public.credit_usage (
   id uuid primary key default gen_random_uuid(),
@@ -162,7 +221,7 @@ create policy "Users can insert own credit usage" on public.credit_usage
   for insert with check (auth.uid() = user_id);
 
 -- ===========================================
--- 5. HELPER FUNCTIONS
+-- 6. HELPER FUNCTIONS
 -- ===========================================
 
 -- Function to deduct credits
@@ -239,13 +298,13 @@ create trigger update_canvas_nodes_updated_at
   for each row execute procedure public.update_updated_at_column();
 
 -- ===========================================
--- 6. REALTIME SUBSCRIPTIONS
+-- 7. REALTIME SUBSCRIPTIONS
 -- ===========================================
 -- Enable realtime for canvas_nodes
 alter publication supabase_realtime add table public.canvas_nodes;
 
 -- ===========================================
--- 7. INDEXES FOR PERFORMANCE
+-- 8. INDEXES FOR PERFORMANCE
 -- ===========================================
 create index if not exists idx_projects_user_id on public.projects(user_id);
 create index if not exists idx_canvas_nodes_project_id on public.canvas_nodes(project_id);
