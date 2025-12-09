@@ -1057,6 +1057,8 @@ Return the COMPLETE HTML with this single element modified.
         onSetActiveTab={setActiveTab}
         onClosePreviewTab={handleClosePreviewTab}
         onSelectElement={setSelectedElement}
+        projectId={projectIdRef.current || project?.id}
+        userId={user?.id}
       />
     </div>
   );

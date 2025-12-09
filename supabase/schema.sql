@@ -304,10 +304,68 @@ create trigger update_canvas_nodes_updated_at
 alter publication supabase_realtime add table public.canvas_nodes;
 
 -- ===========================================
--- 8. INDEXES FOR PERFORMANCE
+-- 8. PUBLISHED PAGES TABLE (for sharing)
+-- ===========================================
+create table if not exists public.published_pages (
+  id uuid primary key default gen_random_uuid(),  -- Also used as public slug
+  node_id text references public.canvas_nodes(id) on delete cascade not null,
+  project_id uuid references public.projects(id) on delete cascade not null,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  title text,
+  html_snapshot text,  -- HTML snapshot for public viewing
+  is_published boolean default true,
+  view_count integer default 0,
+  published_at timestamp with time zone default now(),
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
+);
+
+-- Enable RLS
+alter table public.published_pages enable row level security;
+
+-- IMPORTANT: Public can view published pages (anonymous access)
+create policy "Anyone can view published pages" on public.published_pages
+  for select using (is_published = true);
+
+-- Owner can view all their pages (including unpublished)
+create policy "Owners can view all own pages" on public.published_pages
+  for select using (auth.uid() = user_id);
+
+-- Owners can create published pages
+create policy "Owners can create published pages" on public.published_pages
+  for insert with check (auth.uid() = user_id);
+
+-- Owners can update their published pages
+create policy "Owners can update own published pages" on public.published_pages
+  for update using (auth.uid() = user_id);
+
+-- Owners can delete their published pages
+create policy "Owners can delete own published pages" on public.published_pages
+  for delete using (auth.uid() = user_id);
+
+-- Function to increment view count (security definer to bypass RLS)
+create or replace function public.increment_page_view(page_id uuid)
+returns void as $$
+begin
+  update public.published_pages
+  set view_count = view_count + 1
+  where id = page_id and is_published = true;
+end;
+$$ language plpgsql security definer;
+
+-- Trigger for updated_at
+create trigger update_published_pages_updated_at
+  before update on public.published_pages
+  for each row execute procedure public.update_updated_at_column();
+
+-- ===========================================
+-- 9. INDEXES FOR PERFORMANCE
 -- ===========================================
 create index if not exists idx_projects_user_id on public.projects(user_id);
 create index if not exists idx_canvas_nodes_project_id on public.canvas_nodes(project_id);
 create index if not exists idx_credit_usage_user_id on public.credit_usage(user_id);
 create index if not exists idx_profiles_plan_type on public.profiles(plan_type);
+create index if not exists idx_published_pages_node_id on public.published_pages(node_id);
+create index if not exists idx_published_pages_user_id on public.published_pages(user_id);
+create index if not exists idx_published_pages_is_published on public.published_pages(is_published);
 

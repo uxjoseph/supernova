@@ -64,6 +64,20 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export interface PublishedPage {
+  id: string;           // UUID, also used as public slug
+  node_id: string;      // Reference to canvas_nodes
+  project_id: string;   // Reference to projects
+  user_id: string;      // Reference to profiles
+  title: string | null;
+  html_snapshot: string | null;  // HTML snapshot for public viewing
+  is_published: boolean;
+  view_count: number;
+  published_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // Supabase Database interface for type-safe queries
 export interface Database {
   public: {
@@ -107,6 +121,17 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Omit<ChatMessage, 'id'>>;
+      };
+      published_pages: {
+        Row: PublishedPage;
+        Insert: Omit<PublishedPage, 'id' | 'view_count' | 'created_at' | 'updated_at' | 'published_at'> & {
+          id?: string;
+          view_count?: number;
+          published_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Omit<PublishedPage, 'id'>>;
       };
     };
   };

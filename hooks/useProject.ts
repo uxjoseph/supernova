@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import type { Project, CanvasNode, ChatMessage } from '../types/database';
 import type { DesignNode, Message, Role } from '../types';
+import { syncPublishedPage } from '../services/publishService';
 
 // Debounce helper
 function debounce<T extends (...args: any[]) => any>(
@@ -293,6 +294,16 @@ export const useProject = (): UseProjectReturn => {
       
       setLastSaved(new Date());
       console.log('[useProject] Saved nodes:', nodesToSave.length);
+      
+      // Auto-sync published pages for component nodes with HTML
+      for (const node of nodesToSave) {
+        if (node.type === 'component' && node.html) {
+          // Trigger sync in background (don't await to avoid blocking)
+          syncPublishedPage(node.id, node.title, node.html).catch(err => {
+            console.warn('[useProject] Failed to sync published page:', err);
+          });
+        }
+      }
     } catch (error) {
       console.error('Error saving nodes:', error);
       // Re-add failed nodes to pending

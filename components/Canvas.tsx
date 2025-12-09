@@ -3,11 +3,14 @@ import {
   MousePointer2, Hand, ZoomIn, ZoomOut, Layout, Code, GripVertical, Layers, Pin, RefreshCw, 
   Edit3, Link as LinkIcon, Play, MoreHorizontal, ChevronDown, Download, Smartphone, Tablet, Monitor,
   Copy, Check, FileCode, CheckCircle2, ExternalLink, Image as ImageIcon, Loader2, Sparkles, X, Send, Plus,
-  History, RotateCw, StickyNote, Type, Component as ComponentIcon, LayoutGrid
+  History, RotateCw, StickyNote, Type, Component as ComponentIcon, LayoutGrid, Zap, Share2, Globe, Link2
 } from 'lucide-react';
-import { DesignNode, PreviewTab, SelectedElement, NodeType } from '../types';
+import { DesignNode, PreviewTab, SelectedElement, NodeType, CreditState } from '../types';
+import { PublishedPage } from '../types/database';
 import JSZip from 'jszip';
 import html2canvas from 'html2canvas';
+import { creditService, formatTimeUntilReset } from '../services/creditService';
+import { publishPage, unpublishPage, getPublishStatus, getPublicUrl } from '../services/publishService';
 
 // Preview Tab Content Component
 interface PreviewTabContentProps {
@@ -225,6 +228,9 @@ interface CanvasProps {
   onClosePreviewTab?: (nodeId: string) => void;
   // 요소 선택 관련
   onSelectElement?: (element: SelectedElement | null) => void;
+  // 퍼블리시 관련
+  projectId?: string;
+  userId?: string;
 }
 
 type Tool = 'select' | 'hand';
@@ -246,7 +252,9 @@ export const Canvas: React.FC<CanvasProps> = ({
   activeTab = 'canvas',
   onSetActiveTab,
   onClosePreviewTab,
-  onSelectElement
+  onSelectElement,
+  projectId,
+  userId
 }) => {
   const [scale, setScale] = useState(0.8);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -265,6 +273,14 @@ export const Canvas: React.FC<CanvasProps> = ({
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isCopyingImage, setIsCopyingImage] = useState(false);
+
+  // Share Modal State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareStatus, setShareStatus] = useState<PublishedPage | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [urlCopied, setUrlCopied] = useState(false);
+  const shareModalRef = useRef<HTMLDivElement>(null);
 
   // Create Variant State (handled by Sidebar now)
   // const [showVariantModal, setShowVariantModal] = useState(false);
@@ -676,6 +692,9 @@ export const Canvas: React.FC<CanvasProps> = ({
       if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
         setShowAddMenu(false);
       }
+      if (shareModalRef.current && !shareModalRef.current.contains(event.target as Node)) {
+        setShowShareModal(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -1031,6 +1050,88 @@ export const Canvas: React.FC<CanvasProps> = ({
     }
   };
 
+  // 공유 모달 열기 (퍼블리시 상태 로드)
+  const handleOpenShareModal = async () => {
+    if (!selectedNodeId) return;
+    const node = nodes.find(n => n.id === selectedNodeId);
+    if (!node || !node.html) return;
+
+    setShowShareModal(true);
+    setUrlCopied(false);
+
+    // 기존 퍼블리시 상태 확인
+    const status = await getPublishStatus(selectedNodeId);
+    setShareStatus(status);
+    if (status && status.is_published) {
+      setShareUrl(getPublicUrl(status.id));
+    } else {
+      setShareUrl(null);
+    }
+  };
+
+  // 페이지 퍼블리시/언퍼블리시 토글
+  const handleTogglePublish = async () => {
+    if (!selectedNodeId || !projectId || !userId) {
+      setToastMessage('퍼블리시하려면 로그인이 필요합니다.');
+      return;
+    }
+
+    const node = nodes.find(n => n.id === selectedNodeId);
+    if (!node || !node.html) return;
+
+    setIsPublishing(true);
+
+    try {
+      if (shareStatus?.is_published) {
+        // 언퍼블리시
+        const result = await unpublishPage(selectedNodeId);
+        if (result.success) {
+          setShareStatus(result.publishedPage || null);
+          setShareUrl(null);
+          setToastMessage('페이지가 비공개로 전환되었습니다.');
+        } else {
+          setToastMessage(result.error || '언퍼블리시 실패');
+        }
+      } else {
+        // 퍼블리시
+        const result = await publishPage(
+          selectedNodeId,
+          projectId,
+          userId,
+          node.title,
+          node.html
+        );
+        if (result.success && result.publishedPage) {
+          setShareStatus(result.publishedPage);
+          setShareUrl(result.publicUrl || null);
+          setToastMessage('페이지가 퍼블리시되었습니다!');
+        } else {
+          setToastMessage(result.error || '퍼블리시 실패');
+        }
+      }
+    } catch (error: any) {
+      console.error('Publish toggle error:', error);
+      setToastMessage('오류가 발생했습니다.');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  // 공유 URL 복사
+  const handleCopyShareUrl = async () => {
+    if (!shareUrl) return;
+    
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setUrlCopied(true);
+      setToastMessage('URL이 클립보드에 복사되었습니다!');
+      setTimeout(() => setUrlCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy URL:', error);
+      setToastMessage('URL 복사에 실패했습니다.');
+    }
+  };
+
   // HTML을 이미지로 변환하여 클립보드에 복사 (Figma에서 바로 붙여넣기 가능)
   const handleCopyToFigma = async () => {
     if (!selectedNodeId) return;
@@ -1215,6 +1316,9 @@ export const Canvas: React.FC<CanvasProps> = ({
               {Math.round(scale * 100)}%
             </span>
           )}
+          
+          {/* Credit Display in Tab Bar */}
+          <TabBarCreditDisplay />
         </div>
       </div>
 
@@ -1607,7 +1711,118 @@ export const Canvas: React.FC<CanvasProps> = ({
                       <div className="w-px h-4 bg-gray-200 mx-0.5" />
                       <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-900 transition-colors" title="코드 보기"><Code size={16} /></button>
                       <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-900 transition-colors" title="편집"><Edit3 size={16} /></button>
-                      <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-900 transition-colors" title="링크"><LinkIcon size={16} /></button>
+                      
+                      {/* Share Button with Modal */}
+                      <div className="relative" ref={shareModalRef}>
+                        <button 
+                          onClick={handleOpenShareModal}
+                          className={`p-2 rounded-lg transition-colors ${showShareModal ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-900'}`} 
+                          title="공유하기"
+                        >
+                          <Share2 size={16} />
+                        </button>
+                        
+                        {/* Share Modal */}
+                        {showShareModal && (
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-80 bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-[70]">
+                            {/* Header */}
+                            <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-100">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-1.5 bg-blue-100 rounded-lg">
+                                    <Globe size={14} className="text-blue-600" />
+                                  </div>
+                                  <span className="font-semibold text-gray-900 text-sm">페이지 공유</span>
+                                </div>
+                                <button 
+                                  onClick={() => setShowShareModal(false)}
+                                  className="p-1 hover:bg-white/50 rounded-md text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            </div>
+                            
+                            {/* Content */}
+                            <div className="p-4">
+                              {/* Publish Toggle */}
+                              <div className="flex items-center justify-between mb-4">
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900">웹에 공개</p>
+                                  <p className="text-xs text-gray-500">누구나 URL로 접근 가능</p>
+                                </div>
+                                <button
+                                  onClick={handleTogglePublish}
+                                  disabled={isPublishing || !projectId || !userId}
+                                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 ${
+                                    shareStatus?.is_published 
+                                      ? 'bg-blue-600' 
+                                      : 'bg-gray-200'
+                                  } ${isPublishing ? 'opacity-50' : ''} ${!projectId || !userId ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                >
+                                  <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                                    shareStatus?.is_published ? 'translate-x-6' : 'translate-x-0.5'
+                                  }`}>
+                                    {isPublishing && (
+                                      <Loader2 size={12} className="absolute inset-0 m-auto animate-spin text-gray-400" />
+                                    )}
+                                  </div>
+                                </button>
+                              </div>
+                              
+                              {/* URL Section */}
+                              {shareStatus?.is_published && shareUrl && (
+                                <div className="space-y-2">
+                                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">공개 URL</label>
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 font-mono truncate">
+                                      {shareUrl}
+                                    </div>
+                                    <button
+                                      onClick={handleCopyShareUrl}
+                                      className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
+                                        urlCopied 
+                                          ? 'bg-green-50 text-green-600' 
+                                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                      }`}
+                                      title="URL 복사"
+                                    >
+                                      {urlCopied ? <Check size={16} /> : <Copy size={16} />}
+                                    </button>
+                                  </div>
+                                  
+                                  {/* Open in new tab */}
+                                  <a
+                                    href={shareUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center justify-center gap-2 w-full mt-3 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors"
+                                  >
+                                    <ExternalLink size={14} />
+                                    새 탭에서 열기
+                                  </a>
+                                </div>
+                              )}
+                              
+                              {/* Login prompt if not authenticated */}
+                              {(!projectId || !userId) && (
+                                <div className="text-center py-4">
+                                  <p className="text-xs text-gray-500">퍼블리시하려면 로그인이 필요합니다.</p>
+                                </div>
+                              )}
+                              
+                              {/* View count */}
+                              {shareStatus?.is_published && shareStatus.view_count > 0 && (
+                                <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+                                  <span>조회수</span>
+                                  <span className="font-medium">{shareStatus.view_count.toLocaleString()}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
                       <div className="w-px h-4 bg-gray-200 mx-0.5" />
                       
                       {/* Preview in Tab Button */}
@@ -1908,6 +2123,133 @@ export const Canvas: React.FC<CanvasProps> = ({
           <div className="bg-white/90 backdrop-blur border border-indigo-100 shadow-lg px-4 py-3 rounded-xl flex items-center gap-3 animate-in slide-in-from-top-2">
             <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span></span>
             <span className="text-sm font-medium text-indigo-900">페이지 생성 중...</span>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+// 탭바에 통합된 크레딧 표시 컴포넌트
+const TabBarCreditDisplay: React.FC = () => {
+  const [creditState, setCreditState] = useState<CreditState>(creditService.getState());
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [timeUntilReset, setTimeUntilReset] = useState('');
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 크레딧 상태 구독
+  useEffect(() => {
+    const unsubscribe = creditService.subscribe(setCreditState);
+    return () => unsubscribe();
+  }, []);
+
+  // 리셋 시간 업데이트
+  useEffect(() => {
+    const updateTime = () => {
+      setTimeUntilReset(formatTimeUntilReset(creditState));
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [creditState.resetTime]);
+
+  // 외부 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsExpanded(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const usagePercentage = (creditState.usedCredits / creditState.dailyCredits) * 100;
+  const isLowCredits = creditState.remainingCredits < 20;
+  const isCriticalCredits = creditState.remainingCredits < 10;
+
+  return (
+    <div ref={menuRef} className="relative">
+      {/* 크레딧 버튼 - 탭바 스타일 */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all text-sm ${
+          isCriticalCredits 
+            ? 'bg-red-50 text-red-700 hover:bg-red-100' 
+            : isLowCredits 
+              ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+              : 'hover:bg-gray-100 text-gray-600'
+        }`}
+      >
+        <Zap size={14} className={
+          isCriticalCredits ? 'text-red-500 fill-red-500' : 
+          isLowCredits ? 'text-amber-500 fill-amber-500' : 
+          'text-gray-400'
+        } />
+        <span className="font-semibold tabular-nums">
+          {creditState.remainingCredits.toFixed(1)}
+        </span>
+        <ChevronDown size={12} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* 확장된 크레딧 패널 */}
+      {isExpanded && (
+        <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+          {/* 헤더 */}
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap size={14} className={
+                  isCriticalCredits ? 'text-red-500 fill-red-500' : 
+                  isLowCredits ? 'text-amber-500 fill-amber-500' : 
+                  'text-gray-500'
+                } />
+                <span className="text-sm font-semibold text-gray-900">크레딧</span>
+              </div>
+              <span className="text-xl font-bold tabular-nums text-gray-900">
+                {creditState.remainingCredits.toFixed(1)}
+              </span>
+            </div>
+          </div>
+
+          {/* 상세 정보 */}
+          <div className="p-3 space-y-3">
+            {/* 프로그레스 바 */}
+            <div>
+              <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                <span>사용량</span>
+                <span>{creditState.usedCredits.toFixed(1)} / {creditState.dailyCredits}</span>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    isCriticalCredits ? 'bg-red-500' : 
+                    isLowCredits ? 'bg-amber-500' : 
+                    'bg-gray-800'
+                  }`}
+                  style={{ width: `${Math.min(usagePercentage, 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* 리셋 시간 */}
+            <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
+              <span>다음 리셋</span>
+              <span className="font-medium">{timeUntilReset}</span>
+            </div>
+
+            {/* 경고 메시지 */}
+            {isLowCredits && (
+              <div className={`px-2.5 py-2 rounded-lg text-xs ${
+                isCriticalCredits ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+              }`}>
+                {isCriticalCredits 
+                  ? '⚠️ 크레딧이 거의 소진되었습니다'
+                  : '💡 크레딧이 부족합니다'
+                }
+              </div>
+            )}
           </div>
         </div>
       )}

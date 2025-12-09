@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Sparkles, Plus, Zap, Component, Brain, CheckCircle2, Loader2, ChevronDown, ChevronRight, FileJson, FileCode, FileText, X, Image as ImageIcon, Atom, Package, FileType, Settings2, Wrench, ArrowLeft, Wand2, Layout, Home, Settings, Edit2, PanelLeftClose } from 'lucide-react';
 import { Message, Role, DesignNode, GenerationSection, FileArtifact, VariantCreationState, VARIANT_QUICK_TAGS, SelectedElement } from '../types';
 import { ModelType } from '../services/geminiService';
-import { CreditWidget } from './CreditWidget';
 
 interface SidebarProps {
   width: number;
@@ -580,11 +579,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <PanelLeftClose size={18} />
           </button>
         </div>
-      </div>
-
-      {/* Credit Widget Section */}
-      <div className="flex-shrink-0 border-b border-gray-100 bg-white px-4 py-3">
-        <CreditWidget />
       </div>
 
       {/* Layers / Components Section */}
