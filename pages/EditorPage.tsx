@@ -11,12 +11,14 @@ import { useAuth } from '../contexts/AuthContext';
 interface EditorPageProps {
   initialPrompt?: string;
   initialImages?: string[];
+  initialProjectId?: string;
   onNavigateBack: () => void;
 }
 
 export const EditorPage: React.FC<EditorPageProps> = ({ 
   initialPrompt, 
   initialImages = [],
+  initialProjectId,
   onNavigateBack 
 }) => {
   const [sidebarWidth, setSidebarWidth] = useState(360);
@@ -30,6 +32,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
   const { 
     project, 
     createProject, 
+    loadProject,
     updateProjectName, 
     updateProjectThumbnail,
     saveNode, 
@@ -44,12 +47,21 @@ export const EditorPage: React.FC<EditorPageProps> = ({
   const { deductCredits, hasEnoughCredits } = useCredits();
   
   // 프로젝트 ID를 저장하는 ref (비동기 작업에서 사용)
-  const projectIdRef = useRef<string | null>(null);
+  const projectIdRef = useRef<string | null>(initialProjectId || null);
   const projectCreatingRef = useRef(false);
 
-  // Initialize project on mount
+  // Initialize or load project on mount
   useEffect(() => {
     const initProject = async () => {
+      // 기존 프로젝트 열기
+      if (initialProjectId) {
+        console.log('[EditorPage] Loading existing project:', initialProjectId);
+        projectIdRef.current = initialProjectId;
+        await loadProject(initialProjectId);
+        return;
+      }
+      
+      // 새 프로젝트 생성
       if (user && isConfigured && !project && !projectCreatingRef.current) {
         projectCreatingRef.current = true;
         const newProject = await createProject(projectName);
@@ -61,12 +73,14 @@ export const EditorPage: React.FC<EditorPageProps> = ({
       }
     };
     initProject();
-  }, [user, isConfigured, project, createProject, projectName]);
+  }, [user, isConfigured, initialProjectId]);
   
-  // project 변경 시 ref 업데이트
+  // project 변경 시 이름과 ref 업데이트
   useEffect(() => {
     if (project) {
       projectIdRef.current = project.id;
+      setProjectName(project.name);
+      console.log('[EditorPage] Project loaded:', project.id, project.name);
     }
   }, [project]);
 
@@ -112,6 +126,23 @@ export const EditorPage: React.FC<EditorPageProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState<{id: string, timestamp: number} | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [isLoadingProject, setIsLoadingProject] = useState(!!initialProjectId);
+  
+  // 기존 프로젝트 노드 로드
+  useEffect(() => {
+    if (project && initialProjectId && project.id === initialProjectId) {
+      console.log('[EditorPage] Loading nodes for project:', project.id);
+      setIsLoadingProject(true);
+      loadNodes().then(loadedNodes => {
+        console.log('[EditorPage] Loaded nodes:', loadedNodes.length);
+        setNodes(loadedNodes);
+        setIsLoadingProject(false);
+      }).catch(err => {
+        console.error('[EditorPage] Error loading nodes:', err);
+        setIsLoadingProject(false);
+      });
+    }
+  }, [project, initialProjectId, loadNodes]);
   
   // 변종 만들기 상태
   const [variantState, setVariantState] = useState<VariantCreationState>({

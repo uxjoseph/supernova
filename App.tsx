@@ -9,16 +9,18 @@ type Page = 'landing' | 'editor' | 'settings';
 interface EditorState {
   prompt: string;
   images: string[];
+  projectId?: string;
 }
 
 const AppContent: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>('landing');
   const [editorState, setEditorState] = useState<EditorState | null>(null);
 
-  const handleNavigateToEditor = (prompt: string, images?: string[]) => {
+  const handleNavigateToEditor = (prompt: string, images?: string[], projectId?: string) => {
     setEditorState({
       prompt,
-      images: images || []
+      images: images || [],
+      projectId
     });
     setCurrentPage('editor');
   };
@@ -42,9 +44,10 @@ const AppContent: React.FC = () => {
 
   return (
     <EditorPage 
-      key={editorState?.prompt || 'editor'}
+      key={editorState?.projectId || editorState?.prompt || 'new-editor'}
       initialPrompt={editorState?.prompt}
       initialImages={editorState?.images}
+      initialProjectId={editorState?.projectId}
       onNavigateBack={handleNavigateToLanding}
     />
   );

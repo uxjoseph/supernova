@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { FolderOpen, Clock, Plus, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FolderOpen, Clock, Plus, Loader2, MoreVertical, Pencil, Trash2, X, Check } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import type { Project } from '../types/database';
@@ -18,6 +18,9 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const loadingRef = useRef(false);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   // 프로젝트 로드
   useEffect(() => {
@@ -66,6 +69,47 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
   if (!user) return null;
   
   const hasLoaded = !isLoading;
+
+  // 프로젝트 이름 변경
+  const handleRename = async (projectId: string) => {
+    if (!renameValue.trim()) return;
+    
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({ name: renameValue.trim() })
+        .eq('id', projectId);
+        
+      if (error) throw error;
+      
+      setProjects(prev => 
+        prev.map(p => p.id === projectId ? { ...p, name: renameValue.trim() } : p)
+      );
+      setRenamingId(null);
+      setRenameValue('');
+    } catch (err) {
+      console.error('[Projects] Rename error:', err);
+    }
+  };
+
+  // 프로젝트 삭제
+  const handleDelete = async (projectId: string) => {
+    if (!confirm('정말 이 프로젝트를 삭제하시겠습니까?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId);
+        
+      if (error) throw error;
+      
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      setMenuOpenId(null);
+    } catch (err) {
+      console.error('[Projects] Delete error:', err);
+    }
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -133,10 +177,12 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
-              onClick={() => onOpenProject(project.id)}
-              className="group cursor-pointer"
+              className="group relative"
             >
-              <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-lg transition-all duration-200">
+              <div 
+                onClick={() => onOpenProject(project.id)}
+                className="cursor-pointer bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-lg transition-all duration-200"
+              >
                 {/* Thumbnail */}
                 <div className="aspect-video bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 relative overflow-hidden">
                   {project.thumbnail_url ? (
@@ -156,15 +202,77 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
 
                 {/* Info */}
                 <div className="p-4">
-                  <h3 className="font-medium text-gray-900 dark:text-white truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
-                    {project.name}
-                  </h3>
+                  {renamingId === project.id ? (
+                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        value={renameValue}
+                        onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleRename(project.id)}
+                        className="flex-1 px-2 py-1 text-sm bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        autoFocus
+                      />
+                      <button onClick={() => handleRename(project.id)} className="p-1 text-green-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => { setRenamingId(null); setRenameValue(''); }} className="p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <h3 className="font-medium text-gray-900 dark:text-white truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                      {project.name}
+                    </h3>
+                  )}
                   <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-400 dark:text-gray-500">
                     <Clock className="w-3.5 h-3.5" />
                     <span>{formatDate(project.updated_at)}</span>
                   </div>
                 </div>
               </div>
+              
+              {/* More Menu Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpenId(menuOpenId === project.id ? null : project.id);
+                }}
+                className="absolute top-2 right-2 p-1.5 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm rounded-lg opacity-0 group-hover:opacity-100 hover:bg-white dark:hover:bg-gray-800 transition-all shadow-sm"
+              >
+                <MoreVertical className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+              </button>
+              
+              {/* Dropdown Menu */}
+              <AnimatePresence>
+                {menuOpenId === project.id && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: -5 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -5 }}
+                    className="absolute top-10 right-2 z-20 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden min-w-[140px]"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => {
+                        setRenameValue(project.name);
+                        setRenamingId(project.id);
+                        setMenuOpenId(null);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
+                      <Pencil className="w-4 h-4" />
+                      이름 바꾸기
+                    </button>
+                    <button
+                      onClick={() => handleDelete(project.id)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      삭제하기
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           ))}
         </div>
