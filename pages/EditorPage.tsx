@@ -127,10 +127,15 @@ export const EditorPage: React.FC<EditorPageProps> = ({
   const [focusTrigger, setFocusTrigger] = useState<{id: string, timestamp: number} | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isLoadingProject, setIsLoadingProject] = useState(!!initialProjectId);
+  const nodesLoadedRef = useRef(false);
   
-  // 기존 프로젝트 노드 로드
+  // 기존 프로젝트 노드 로드 - 처음 한 번만 실행
   useEffect(() => {
+    // 이미 로드했으면 스킵
+    if (nodesLoadedRef.current) return;
+    
     if (project && initialProjectId && project.id === initialProjectId) {
+      nodesLoadedRef.current = true;
       console.log('[EditorPage] Loading nodes for project:', project.id);
       setIsLoadingProject(true);
       loadNodes().then(loadedNodes => {
@@ -142,7 +147,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
         setIsLoadingProject(false);
       });
     }
-  }, [project, initialProjectId, loadNodes]);
+  }, [project, initialProjectId]);
   
   // 변종 만들기 상태
   const [variantState, setVariantState] = useState<VariantCreationState>({
@@ -696,11 +701,27 @@ Return the COMPLETE HTML with this single element modified.
         features: ['원본 디자인 기반', prompt]
       });
 
+      const finalVariantNode: DesignNode = {
+        id: newNodeId,
+        type: 'component',
+        title: variantTitle,
+        html: cleanHtml,
+        x: sourceNode.x + sourceNode.width + GAP,
+        y: sourceNode.y,
+        width: sourceNode.width,
+        height: sourceNode.height,
+      };
+
       setNodes(currentNodes => currentNodes.map(n => 
-        n.id === newNodeId 
-          ? { ...n, html: cleanHtml, title: variantTitle } 
-          : n
+        n.id === newNodeId ? finalVariantNode : n
       ));
+
+      // 변종 노드 저장
+      const currentProjectId = projectIdRef.current || project?.id;
+      if (currentProjectId) {
+        console.log('[EditorPage] Saving variant node:', newNodeId);
+        await saveNodeImmediate(finalVariantNode, currentProjectId);
+      }
 
       setMessages(prev => prev.map(msg => 
         msg.id === botMsgId 
@@ -838,11 +859,27 @@ Return the COMPLETE HTML with this single element modified.
         features: ['Based on original design', 'Applied style changes', 'Maintained structure']
       });
 
+      const finalVariantNode: DesignNode = {
+        id: newNodeId,
+        type: 'component',
+        title: variantTitle,
+        html: cleanHtml,
+        x: sourceNode.x + sourceNode.width + GAP,
+        y: sourceNode.y,
+        width: sourceNode.width,
+        height: sourceNode.height,
+      };
+
       setNodes(currentNodes => currentNodes.map(n => 
-        n.id === newNodeId 
-          ? { ...n, html: cleanHtml, title: variantTitle } 
-          : n
+        n.id === newNodeId ? finalVariantNode : n
       ));
+
+      // 변종 노드 저장
+      const currentProjectId = projectIdRef.current || project?.id;
+      if (currentProjectId) {
+        console.log('[EditorPage] Saving variant node:', newNodeId);
+        await saveNodeImmediate(finalVariantNode, currentProjectId);
+      }
 
       setMessages(prev => prev.map(msg => 
         msg.id === botMsgId 
