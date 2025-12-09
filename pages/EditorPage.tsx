@@ -34,19 +34,41 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     updateProjectThumbnail,
     saveNode, 
     saveNodes, 
+    saveNodeImmediate,
     deleteNode: deleteNodeFromDb,
     loadNodes,
     isSaving,
-    lastSaved 
+    lastSaved,
+    setProject 
   } = useProject();
   const { deductCredits, hasEnoughCredits } = useCredits();
+  
+  // 프로젝트 ID를 저장하는 ref (비동기 작업에서 사용)
+  const projectIdRef = useRef<string | null>(null);
+  const projectCreatingRef = useRef(false);
 
   // Initialize project on mount
   useEffect(() => {
-    if (user && isConfigured && !project) {
-      createProject(projectName);
-    }
+    const initProject = async () => {
+      if (user && isConfigured && !project && !projectCreatingRef.current) {
+        projectCreatingRef.current = true;
+        const newProject = await createProject(projectName);
+        if (newProject) {
+          projectIdRef.current = newProject.id;
+          console.log('[EditorPage] Project created:', newProject.id);
+        }
+        projectCreatingRef.current = false;
+      }
+    };
+    initProject();
   }, [user, isConfigured, project, createProject, projectName]);
+  
+  // project 변경 시 ref 업데이트
+  useEffect(() => {
+    if (project) {
+      projectIdRef.current = project.id;
+    }
+  }, [project]);
 
   const startResizing = useCallback(() => {
     isResizing.current = true;
@@ -413,8 +435,10 @@ Return the COMPLETE HTML with this single element modified.
       ));
 
       // Auto-save the generated node
-      if (project) {
-        saveNode(finalNode);
+      const currentProjectId = projectIdRef.current || project?.id;
+      if (currentProjectId) {
+        console.log('[EditorPage] Saving node to project:', currentProjectId);
+        await saveNodeImmediate(finalNode, currentProjectId);
         
         // Capture and save thumbnail for the first node
         const currentNodes = nodes.filter(n => n.id !== targetNodeId);
@@ -426,6 +450,8 @@ Return the COMPLETE HTML with this single element modified.
             }
           }, 1000);
         }
+      } else {
+        console.warn('[EditorPage] Cannot save: no project ID available');
       }
 
       setMessages(prev => prev.map(msg => 
@@ -469,13 +495,19 @@ Return the COMPLETE HTML with this single element modified.
   const handleUpdateNode = (updatedNode: DesignNode) => {
     setNodes(prev => prev.map(n => n.id === updatedNode.id ? updatedNode : n));
     // Auto-save to database
-    saveNode(updatedNode);
+    const pid = projectIdRef.current || project?.id;
+    if (pid) {
+      saveNode(updatedNode, pid);
+    }
   };
 
   const handleAddNode = (newNode: DesignNode) => {
     setNodes(prev => [...prev, newNode]);
     // Auto-save to database
-    saveNode(newNode);
+    const pid = projectIdRef.current || project?.id;
+    if (pid) {
+      saveNode(newNode, pid);
+    }
   };
 
   const handleDeleteNode = (nodeId: string) => {

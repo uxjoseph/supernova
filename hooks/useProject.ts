@@ -28,10 +28,12 @@ interface UseProjectReturn {
   updateProjectThumbnail: (thumbnailUrl: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   loadProjects: () => Promise<void>;
-  saveNode: (node: DesignNode) => void;
-  saveNodes: (nodes: DesignNode[]) => void;
+  saveNode: (node: DesignNode, projectId?: string) => void;
+  saveNodes: (nodes: DesignNode[], projectId?: string) => void;
+  saveNodeImmediate: (node: DesignNode, projectId: string) => Promise<void>;
   deleteNode: (nodeId: string) => Promise<void>;
   loadNodes: () => Promise<DesignNode[]>;
+  setProject: (project: Project | null) => void;
 }
 
 export const useProject = (): UseProjectReturn => {
@@ -218,16 +220,24 @@ export const useProject = (): UseProjectReturn => {
     height: node.height,
   });
 
+  // Current project ID ref for async operations
+  const currentProjectIdRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    currentProjectIdRef.current = project?.id || null;
+  }, [project]);
+
   // Batch save pending nodes
-  const flushPendingSaves = useCallback(async () => {
-    if (!project || pendingSaves.current.size === 0 || !isSupabaseConfigured()) return;
+  const flushPendingSaves = useCallback(async (overrideProjectId?: string) => {
+    const projectId = overrideProjectId || currentProjectIdRef.current;
+    if (!projectId || pendingSaves.current.size === 0 || !isSupabaseConfigured()) return;
 
     const nodesToSave = Array.from(pendingSaves.current.values());
     pendingSaves.current.clear();
 
     setIsSaving(true);
     try {
-      const canvasNodes = nodesToSave.map(node => designNodeToCanvasNode(node, project.id));
+      const canvasNodes = nodesToSave.map(node => designNodeToCanvasNode(node, projectId));
       
       const { error } = await supabase
         .from('canvas_nodes')
@@ -236,6 +246,7 @@ export const useProject = (): UseProjectReturn => {
       if (error) throw error;
       
       setLastSaved(new Date());
+      console.log('[useProject] Saved nodes:', nodesToSave.length);
     } catch (error) {
       console.error('Error saving nodes:', error);
       // Re-add failed nodes to pending
@@ -243,29 +254,69 @@ export const useProject = (): UseProjectReturn => {
     } finally {
       setIsSaving(false);
     }
-  }, [project]);
+  }, []);
 
   // Debounced save trigger
   const debouncedFlush = useMemo(
-    () => debounce(flushPendingSaves, 1000),
+    () => debounce(() => flushPendingSaves(), 1000),
     [flushPendingSaves]
   );
 
   // Save a single node (debounced)
-  const saveNode = useCallback((node: DesignNode) => {
-    if (!project) return;
+  const saveNode = useCallback((node: DesignNode, projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid) {
+      console.warn('[useProject] Cannot save node: no project ID');
+      return;
+    }
     
     pendingSaves.current.set(node.id, node);
-    debouncedFlush();
-  }, [project, debouncedFlush]);
+    if (projectId) {
+      // If explicit projectId provided, flush immediately with that ID
+      flushPendingSaves(projectId);
+    } else {
+      debouncedFlush();
+    }
+  }, [debouncedFlush, flushPendingSaves]);
 
   // Save multiple nodes
-  const saveNodes = useCallback((nodes: DesignNode[]) => {
-    if (!project) return;
+  const saveNodes = useCallback((nodes: DesignNode[], projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid) {
+      console.warn('[useProject] Cannot save nodes: no project ID');
+      return;
+    }
     
     nodes.forEach(node => pendingSaves.current.set(node.id, node));
-    debouncedFlush();
-  }, [project, debouncedFlush]);
+    if (projectId) {
+      flushPendingSaves(projectId);
+    } else {
+      debouncedFlush();
+    }
+  }, [debouncedFlush, flushPendingSaves]);
+
+  // Save a node immediately (for critical saves)
+  const saveNodeImmediate = useCallback(async (node: DesignNode, projectId: string) => {
+    if (!isSupabaseConfigured()) return;
+
+    setIsSaving(true);
+    try {
+      const canvasNode = designNodeToCanvasNode(node, projectId);
+      
+      const { error } = await supabase
+        .from('canvas_nodes')
+        .upsert(canvasNode, { onConflict: 'id' });
+
+      if (error) throw error;
+      
+      setLastSaved(new Date());
+      console.log('[useProject] Immediate save successful for node:', node.id);
+    } catch (error) {
+      console.error('Error saving node immediately:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, []);
 
   // Delete a node
   const deleteNode = useCallback(async (nodeId: string) => {
@@ -333,8 +384,10 @@ export const useProject = (): UseProjectReturn => {
     loadProjects,
     saveNode,
     saveNodes,
+    saveNodeImmediate,
     deleteNode,
     loadNodes,
+    setProject,
   };
 };
 

@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { FolderOpen, Clock, Plus, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { useProject } from '../hooks/useProject';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import type { Project } from '../types/database';
 
 interface MyProjectsSectionProps {
@@ -15,14 +15,41 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
   onCreateNew,
 }) => {
   const { user } = useAuth();
-  const { projects, loadProjects, isLoading } = useProject();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
 
-  useEffect(() => {
-    if (user && !hasLoaded) {
-      loadProjects().then(() => setHasLoaded(true));
+  // 프로젝트 로드 함수
+  const loadProjects = useCallback(async () => {
+    if (!user || !isSupabaseConfigured()) {
+      setHasLoaded(true);
+      return;
     }
-  }, [user, hasLoaded, loadProjects]);
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setProjects(data as Project[]);
+    } catch (error) {
+      console.error('Error loading projects:', error);
+    } finally {
+      setIsLoading(false);
+      setHasLoaded(true);
+    }
+  }, [user]);
+
+  // 컴포넌트 마운트 시 항상 프로젝트 로드
+  useEffect(() => {
+    if (user) {
+      loadProjects();
+    }
+  }, [user, loadProjects]);
 
   // 로그인하지 않은 경우 표시하지 않음
   if (!user) return null;
