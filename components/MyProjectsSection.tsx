@@ -22,11 +22,14 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
   // 프로젝트 로드 함수
   const loadProjects = useCallback(async () => {
     if (!user || !isSupabaseConfigured()) {
+      console.log('[Projects] No user or Supabase not configured');
       setHasLoaded(true);
       return;
     }
 
     setIsLoading(true);
+    console.log('[Projects] Loading projects for user:', user.id);
+    
     try {
       const { data, error } = await supabase
         .from('projects')
@@ -34,7 +37,12 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Projects] Error:', error);
+        throw error;
+      }
+      
+      console.log('[Projects] Loaded:', data?.length || 0, 'projects');
       setProjects(data as Project[]);
     } catch (error) {
       console.error('Error loading projects:', error);
@@ -49,7 +57,18 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
     if (user) {
       loadProjects();
     }
-  }, [user, loadProjects]);
+    
+    // 타임아웃: 5초 후에도 로딩 중이면 강제로 완료
+    const timeout = setTimeout(() => {
+      if (!hasLoaded) {
+        console.warn('[Projects] Loading timeout, forcing complete');
+        setIsLoading(false);
+        setHasLoaded(true);
+      }
+    }, 5000);
+    
+    return () => clearTimeout(timeout);
+  }, [user, loadProjects, hasLoaded]);
 
   // 로그인하지 않은 경우 표시하지 않음
   if (!user) return null;

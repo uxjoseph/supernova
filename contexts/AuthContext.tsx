@@ -70,62 +70,108 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Initialize auth state
   useEffect(() => {
     if (!isConfigured) {
+      console.log('[Auth] Supabase not configured, skipping auth');
       setIsLoading(false);
       return;
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        fetchProfile(session.user.id).then(setProfile);
+    let isMounted = true;
+    
+    // 타임아웃: 5초 후에도 로딩 중이면 강제로 완료
+    const timeout = setTimeout(() => {
+      if (isMounted && isLoading) {
+        console.warn('[Auth] Session loading timeout, forcing complete');
+        setIsLoading(false);
       }
-      
-      setIsLoading(false);
-    });
+    }, 5000);
+
+    // Get initial session
+    const initSession = async () => {
+      try {
+        console.log('[Auth] Getting initial session...');
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('[Auth] Error getting session:', error);
+          if (isMounted) setIsLoading(false);
+          return;
+        }
+        
+        if (isMounted) {
+          setSession(session);
+          setUser(session?.user ?? null);
+          
+          if (session?.user) {
+            console.log('[Auth] User found:', session.user.email);
+            const profile = await fetchProfile(session.user.id);
+            if (isMounted) setProfile(profile);
+          } else {
+            console.log('[Auth] No user session');
+          }
+          
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('[Auth] Session init error:', error);
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    
+    initSession();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session) => {
+        console.log('[Auth] Auth state changed:', event);
+        
+        if (!isMounted) return;
+        
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
           // Fetch or create profile
           const userProfile = await fetchProfile(session.user.id);
-          setProfile(userProfile);
+          if (isMounted) setProfile(userProfile);
 
           // If profile doesn't exist yet, create it
           if (!userProfile && event === 'SIGNED_IN') {
-            const { data: newProfile } = await supabase
-              .from('profiles')
-              .insert({
-                id: session.user.id,
-                email: session.user.email,
-                name: session.user.user_metadata?.full_name || session.user.user_metadata?.name,
-                avatar_url: session.user.user_metadata?.avatar_url,
-                plan_type: 'free',
-                credits_remaining: 100,
-                credits_max: 300,
-              })
-              .select()
-              .single();
+            try {
+              const { data: newProfile, error } = await supabase
+                .from('profiles')
+                .insert({
+                  id: session.user.id,
+                  email: session.user.email,
+                  name: session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+                  avatar_url: session.user.user_metadata?.avatar_url,
+                  plan_type: 'free',
+                  credits_remaining: 100,
+                  credits_max: 300,
+                })
+                .select()
+                .single();
 
-            if (newProfile) {
-              setProfile(newProfile as Profile);
+              if (newProfile && isMounted) {
+                setProfile(newProfile as Profile);
+              }
+              if (error) {
+                console.error('[Auth] Error creating profile:', error);
+              }
+            } catch (err) {
+              console.error('[Auth] Profile creation error:', err);
             }
           }
         } else {
-          setProfile(null);
+          if (isMounted) setProfile(null);
         }
 
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     );
 
     return () => {
+      isMounted = false;
+      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, [isConfigured, fetchProfile]);
