@@ -76,39 +76,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     let isMounted = true;
-    
-    // 타임아웃: 5초 후에도 로딩 중이면 강제로 완료
-    const timeout = setTimeout(() => {
-      if (isMounted && isLoading) {
-        console.warn('[Auth] Session loading timeout, forcing complete');
-        setIsLoading(false);
-      }
-    }, 5000);
 
-    // Get initial session
+    // Get initial session - 단순하게!
     const initSession = async () => {
       try {
         console.log('[Auth] Getting initial session...');
         const { data: { session }, error } = await supabase.auth.getSession();
         
+        if (!isMounted) return;
+        
         if (error) {
           console.error('[Auth] Error getting session:', error);
-          if (isMounted) setIsLoading(false);
+          setIsLoading(false);
           return;
         }
         
-        if (isMounted) {
-          setSession(session);
-          setUser(session?.user ?? null);
-          
-          if (session?.user) {
-            console.log('[Auth] User found:', session.user.email);
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          console.log('[Auth] User found:', session.user.email);
+          try {
             const profile = await fetchProfile(session.user.id);
             if (isMounted) setProfile(profile);
-          } else {
-            console.log('[Auth] No user session');
+          } catch (e) {
+            console.error('[Auth] Profile fetch error:', e);
           }
-          
+        } else {
+          console.log('[Auth] No user session');
+        }
+        
+        if (isMounted) {
+          console.log('[Auth] Session init complete');
           setIsLoading(false);
         }
       } catch (error) {
@@ -126,17 +125,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         if (!isMounted) return;
         
+        // SIGNED_OUT 이벤트는 즉시 처리
+        if (event === 'SIGNED_OUT') {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setIsLoading(false);
+          console.log('[Auth] Signed out');
+          return;
+        }
+        
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
           // Fetch or create profile
-          const userProfile = await fetchProfile(session.user.id);
-          if (isMounted) setProfile(userProfile);
+          try {
+            const userProfile = await fetchProfile(session.user.id);
+            if (isMounted) setProfile(userProfile);
 
-          // If profile doesn't exist yet, create it
-          if (!userProfile && event === 'SIGNED_IN') {
-            try {
+            // If profile doesn't exist yet, create it
+            if (!userProfile && event === 'SIGNED_IN') {
               const { data: newProfile, error } = await supabase
                 .from('profiles')
                 .insert({
@@ -157,9 +166,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               if (error) {
                 console.error('[Auth] Error creating profile:', error);
               }
-            } catch (err) {
-              console.error('[Auth] Profile creation error:', err);
             }
+          } catch (err) {
+            console.error('[Auth] Profile error:', err);
           }
         } else {
           if (isMounted) setProfile(null);
@@ -171,7 +180,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     return () => {
       isMounted = false;
-      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, [isConfigured, fetchProfile]);

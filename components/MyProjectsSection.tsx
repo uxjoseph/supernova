@@ -24,6 +24,7 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
     if (!user || !isSupabaseConfigured()) {
       console.log('[Projects] No user or Supabase not configured');
       setHasLoaded(true);
+      setIsLoading(false);
       return;
     }
 
@@ -39,36 +40,33 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
 
       if (error) {
         console.error('[Projects] Error:', error);
-        throw error;
+        setProjects([]);
+      } else {
+        console.log('[Projects] Loaded:', data?.length || 0, 'projects');
+        setProjects(data as Project[]);
       }
-      
-      console.log('[Projects] Loaded:', data?.length || 0, 'projects');
-      setProjects(data as Project[]);
     } catch (error) {
-      console.error('Error loading projects:', error);
+      console.error('[Projects] Error loading projects:', error);
+      setProjects([]);
     } finally {
       setIsLoading(false);
       setHasLoaded(true);
     }
   }, [user]);
 
-  // 컴포넌트 마운트 시 항상 프로젝트 로드
+  // 컴포넌트 마운트 시 프로젝트 로드
   useEffect(() => {
-    if (user) {
+    // user가 있고 아직 로드하지 않았으면 로드
+    if (user && !hasLoaded) {
       loadProjects();
     }
-    
-    // 타임아웃: 5초 후에도 로딩 중이면 강제로 완료
-    const timeout = setTimeout(() => {
-      if (!hasLoaded) {
-        console.warn('[Projects] Loading timeout, forcing complete');
-        setIsLoading(false);
-        setHasLoaded(true);
-      }
-    }, 5000);
-    
-    return () => clearTimeout(timeout);
-  }, [user, loadProjects, hasLoaded]);
+    // user가 없으면 초기화
+    if (!user) {
+      setProjects([]);
+      setHasLoaded(false);
+      setIsLoading(false);
+    }
+  }, [user, hasLoaded, loadProjects]);
 
   // 로그인하지 않은 경우 표시하지 않음
   if (!user) return null;
