@@ -839,7 +839,13 @@ Return the COMPLETE HTML with this single element modified.
           width={sidebarWidth}
           onResizeStart={startResizing}
           projectName={projectName}
-          onRenameProject={setProjectName}
+          onRenameProject={(name) => {
+            setProjectName(name);
+            // 서버에도 저장
+            if (project || projectIdRef.current) {
+              updateProjectName(name);
+            }
+          }}
           onToggleSidebar={() => setIsSidebarOpen(false)}
           messages={messages} 
           nodes={nodes}

@@ -128,19 +128,24 @@ export const useProject = (): UseProjectReturn => {
 
   // Update project name
   const updateProjectName = useCallback(async (name: string) => {
-    if (!project || !isSupabaseConfigured()) return;
+    const projectId = currentProjectIdRef.current || project?.id;
+    if (!projectId || !isSupabaseConfigured()) {
+      console.warn('[useProject] Cannot update name: no project ID');
+      return;
+    }
 
     try {
       const { error } = await supabase
         .from('projects')
         .update({ name })
-        .eq('id', project.id);
+        .eq('id', projectId);
 
       if (error) throw error;
       
+      console.log('[useProject] Project name updated:', name);
       setProject(prev => prev ? { ...prev, name } : null);
       setProjects(prev => 
-        prev.map(p => p.id === project.id ? { ...p, name } : p)
+        prev.map(p => p.id === projectId ? { ...p, name } : p)
       );
     } catch (error) {
       console.error('Error updating project name:', error);
@@ -149,19 +154,24 @@ export const useProject = (): UseProjectReturn => {
 
   // Update project thumbnail
   const updateProjectThumbnail = useCallback(async (thumbnailUrl: string) => {
-    if (!project || !isSupabaseConfigured()) return;
+    const projectId = currentProjectIdRef.current || project?.id;
+    if (!projectId || !isSupabaseConfigured()) {
+      console.warn('[useProject] Cannot update thumbnail: no project ID');
+      return;
+    }
 
     try {
       const { error } = await supabase
         .from('projects')
         .update({ thumbnail_url: thumbnailUrl })
-        .eq('id', project.id);
+        .eq('id', projectId);
 
       if (error) throw error;
       
+      console.log('[useProject] Thumbnail updated for project:', projectId);
       setProject(prev => prev ? { ...prev, thumbnail_url: thumbnailUrl } : null);
       setProjects(prev => 
-        prev.map(p => p.id === project.id ? { ...p, thumbnail_url: thumbnailUrl } : p)
+        prev.map(p => p.id === projectId ? { ...p, thumbnail_url: thumbnailUrl } : p)
       );
     } catch (error) {
       console.error('Error updating project thumbnail:', error);
