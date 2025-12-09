@@ -672,9 +672,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {/* 크레딧 사용량 표시 (AI 응답에만) */}
               {msg.role === Role.MODEL && msg.creditsUsed !== undefined && msg.creditsUsed > 0 && (
-                <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400">
-                  <span className="tabular-nums font-medium">{msg.creditsUsed.toFixed(2)} credits</span>
-                  <span>·</span>
+                <div className="flex items-center gap-1.5 mt-2 text-[10px] text-gray-400/70 font-normal">
+                  <span className="tabular-nums">{msg.creditsUsed.toFixed(2)} credits</span>
                   <span>{getMessageTimeAgo(msg.timestamp)}</span>
                 </div>
               )}

@@ -4,7 +4,7 @@ import { Canvas } from '../components/Canvas';
 import { PanelLeftOpen, ArrowLeft, Cloud, CloudOff, Check } from 'lucide-react';
 import { Message, Role, DesignNode, FileArtifact, GenerationSection, VariantCreationState, PreviewTab, SelectedElement } from '../types';
 import { generateDesignStream, extractHtml, ModelType, StreamResult } from '../services/geminiService';
-import { tokensToCredits } from '../services/creditService';
+import { tokensToCredits, creditService } from '../services/creditService';
 import { useProject } from '../hooks/useProject';
 import { useCredits } from '../hooks/useCredits';
 import { useAuth } from '../contexts/AuthContext';
@@ -457,8 +457,21 @@ Return the COMPLETE HTML with this single element modified.
          }
       });
 
-      // 토큰 사용량에서 크레딧 계산
+      // 토큰 사용량에서 크레딧 계산 및 차감
       const creditsUsed = tokensToCredits(streamResult.tokenUsage.totalTokenCount);
+      
+      console.log('[Credits] Token usage:', streamResult.tokenUsage);
+      console.log('[Credits] Credits to deduct:', creditsUsed);
+      
+      // 로컬 크레딧 서비스에서 차감 (탭바 표시용)
+      const deductResult = creditService.deductCredits(
+        'generation',
+        streamResult.tokenUsage,
+        `${componentTitle} 페이지 생성`
+      );
+      
+      console.log('[Credits] Deduct result:', deductResult);
+      console.log('[Credits] Current state:', creditService.getState());
 
       updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 445 });
       
@@ -740,6 +753,13 @@ Return the COMPLETE HTML with this single element modified.
       });
 
       const variantCreditsUsed = tokensToCredits(variantResult.tokenUsage.totalTokenCount);
+      
+      // 로컬 크레딧 서비스에서 차감
+      creditService.deductCredits(
+        'generation',
+        variantResult.tokenUsage,
+        `${sourceNode.title} 변종 생성`
+      );
 
       updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 400 });
       updateSection(botMsgId, 'files', { status: 'completed' });
@@ -917,6 +937,13 @@ Return the COMPLETE HTML with this single element modified.
       });
 
       const variantCredits = tokensToCredits(variantStreamResult.tokenUsage.totalTokenCount);
+      
+      // 로컬 크레딧 서비스에서 차감
+      creditService.deductCredits(
+        'generation',
+        variantStreamResult.tokenUsage,
+        `${sourceNode.title} 변종 생성`
+      );
 
       updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 400 });
       updateSection(botMsgId, 'files', { status: 'completed' });
