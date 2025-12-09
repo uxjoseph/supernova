@@ -166,7 +166,11 @@ export const useProject = (): UseProjectReturn => {
         .update({ thumbnail_url: thumbnailUrl })
         .eq('id', projectId);
 
-      if (error) throw error;
+      if (error) {
+        // thumbnail_url 컬럼이 없을 수 있음 - 무시하고 계속
+        console.warn('[useProject] Thumbnail update skipped (column may not exist):', error.message);
+        return;
+      }
       
       console.log('[useProject] Thumbnail updated for project:', projectId);
       setProject(prev => prev ? { ...prev, thumbnail_url: thumbnailUrl } : null);
@@ -174,7 +178,8 @@ export const useProject = (): UseProjectReturn => {
         prev.map(p => p.id === projectId ? { ...p, thumbnail_url: thumbnailUrl } : p)
       );
     } catch (error) {
-      console.error('Error updating project thumbnail:', error);
+      // 에러가 나도 무시 - 썸네일은 필수가 아님
+      console.warn('[useProject] Thumbnail update error (ignored):', error);
     }
   }, [project]);
 
