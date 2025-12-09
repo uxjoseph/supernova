@@ -3,7 +3,9 @@ import { DESIGN_SYSTEM_GUIDE, LANDING_PAGE_TEMPLATE } from "../designSystem";
 import { TokenUsageMetadata, GenerationResult } from "../types";
 
 // Initialize Gemini Client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || process.env.GEMINI_API_KEY || '' });
+const ai = new GoogleGenAI({ 
+  apiKey: import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || '' 
+});
 
 const DEFAULT_SYSTEM_INSTRUCTION = `
 당신은 'Supernova', 세계 최고 수준의 디자인 엔지니어 AI입니다.
