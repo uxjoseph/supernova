@@ -4,7 +4,7 @@ import { Canvas } from '../components/Canvas';
 import { PanelLeftOpen, ArrowLeft, Cloud, CloudOff, Check } from 'lucide-react';
 import { Message, Role, DesignNode, FileArtifact, GenerationSection, VariantCreationState, PreviewTab, SelectedElement } from '../types';
 import { generateDesignStream, extractHtml, ModelType, StreamResult } from '../services/geminiService';
-import { tokensToCredits, creditService } from '../services/creditService';
+// 크레딧 관리는 useCredits 훅을 통해 Supabase에서 처리
 import { useProject } from '../hooks/useProject';
 import { useCredits } from '../hooks/useCredits';
 import { useAuth } from '../contexts/AuthContext';
@@ -48,7 +48,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     loadMessages,
     updateMessage
   } = useProject();
-  const { deductCredits, hasEnoughCredits } = useCredits();
+  const { deductCredits: deductSupabaseCredits, hasEnoughCredits, refreshCredits } = useCredits();
   
   // 프로젝트 ID를 저장하는 ref (비동기 작업에서 사용)
   const projectIdRef = useRef<string | null>(initialProjectId || null);
@@ -457,21 +457,10 @@ Return the COMPLETE HTML with this single element modified.
          }
       });
 
-      // 토큰 사용량에서 크레딧 계산 및 차감
-      const creditsUsed = tokensToCredits(streamResult.tokenUsage.totalTokenCount);
-      
-      console.log('[Credits] Token usage:', streamResult.tokenUsage);
-      console.log('[Credits] Credits to deduct:', creditsUsed);
-      
-      // 로컬 크레딧 서비스에서 차감 (탭바 표시용)
-      const deductResult = creditService.deductCredits(
-        'generation',
-        streamResult.tokenUsage,
-        `${componentTitle} 페이지 생성`
-      );
-      
-      console.log('[Credits] Deduct result:', deductResult);
-      console.log('[Credits] Current state:', creditService.getState());
+      // Supabase에서 크레딧 차감 (전역 연동)
+      console.log('[Credits] Deducting credits from Supabase...');
+      await deductSupabaseCredits('generation', project?.id);
+      console.log('[Credits] Credits deducted successfully');
 
       updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 445 });
       
@@ -752,14 +741,8 @@ Return the COMPLETE HTML with this single element modified.
         updateFileInSection(botMsgId, 'files', 'component', { linesAdded: lineCount });
       });
 
-      const variantCreditsUsed = tokensToCredits(variantResult.tokenUsage.totalTokenCount);
-      
-      // 로컬 크레딧 서비스에서 차감
-      creditService.deductCredits(
-        'generation',
-        variantResult.tokenUsage,
-        `${sourceNode.title} 변종 생성`
-      );
+      // Supabase에서 크레딧 차감 (변종 생성)
+      await deductSupabaseCredits('variant', project?.id);
 
       updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 400 });
       updateSection(botMsgId, 'files', { status: 'completed' });
@@ -936,14 +919,8 @@ Return the COMPLETE HTML with this single element modified.
         updateFileInSection(botMsgId, 'files', 'component', { linesAdded: lineCount });
       });
 
-      const variantCredits = tokensToCredits(variantStreamResult.tokenUsage.totalTokenCount);
-      
-      // 로컬 크레딧 서비스에서 차감
-      creditService.deductCredits(
-        'generation',
-        variantStreamResult.tokenUsage,
-        `${sourceNode.title} 변종 생성`
-      );
+      // Supabase에서 크레딧 차감 (변종 생성)
+      await deductSupabaseCredits('variant', project?.id);
 
       updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 400 });
       updateSection(botMsgId, 'files', { status: 'completed' });

@@ -5,12 +5,12 @@ import {
   Copy, Check, FileCode, CheckCircle2, ExternalLink, Image as ImageIcon, Loader2, Sparkles, X, Send, Plus,
   History, RotateCw, StickyNote, Type, Component as ComponentIcon, LayoutGrid, Zap, Share2, Globe, Link2
 } from 'lucide-react';
-import { DesignNode, PreviewTab, SelectedElement, NodeType, CreditState } from '../types';
+import { DesignNode, PreviewTab, SelectedElement, NodeType } from '../types';
 import { PublishedPage } from '../types/database';
 import JSZip from 'jszip';
 import html2canvas from 'html2canvas';
-import { creditService, formatTimeUntilReset } from '../services/creditService';
 import { publishPage, unpublishPage, getPublishStatus, getPublicUrl } from '../services/publishService';
+import { useAuth } from '../contexts/AuthContext';
 
 // Preview Tab Content Component
 interface PreviewTabContentProps {
@@ -2131,40 +2131,11 @@ export const Canvas: React.FC<CanvasProps> = ({
   );
 };
 
-// 탭바에 통합된 크레딧 표시 컴포넌트
+// 탭바에 통합된 크레딧 표시 컴포넌트 (Supabase 연동)
 const TabBarCreditDisplay: React.FC = () => {
-  const [creditState, setCreditState] = useState<CreditState>(creditService.getState());
+  const { profile } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [timeUntilReset, setTimeUntilReset] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
-
-  // 크레딧 상태 구독
-  useEffect(() => {
-    console.log('[TabBarCredit] Subscribing to credit service');
-    
-    // 즉시 최신 상태로 초기화
-    setCreditState(creditService.getState());
-    
-    const unsubscribe = creditService.subscribe((newState) => {
-      console.log('[TabBarCredit] Credit state updated:', newState);
-      setCreditState(newState);
-    });
-    
-    return () => {
-      console.log('[TabBarCredit] Unsubscribing from credit service');
-      unsubscribe();
-    };
-  }, []);
-
-  // 리셋 시간 업데이트
-  useEffect(() => {
-    const updateTime = () => {
-      setTimeUntilReset(formatTimeUntilReset(creditState));
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 60 * 1000);
-    return () => clearInterval(interval);
-  }, [creditState.resetTime]);
 
   // 외부 클릭 시 닫기
   useEffect(() => {
@@ -2177,9 +2148,12 @@ const TabBarCreditDisplay: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const usagePercentage = (creditState.usedCredits / creditState.dailyCredits) * 100;
-  const isLowCredits = creditState.remainingCredits < 20;
-  const isCriticalCredits = creditState.remainingCredits < 10;
+  const credits = profile?.credits_remaining ?? 100;
+  const maxCredits = profile?.credits_max ?? 300;
+  const usedCredits = maxCredits - credits;
+  const usagePercentage = (usedCredits / maxCredits) * 100;
+  const isLowCredits = credits < 30;
+  const isCriticalCredits = credits < 10;
 
   return (
     <div ref={menuRef} className="relative">
@@ -2200,7 +2174,7 @@ const TabBarCreditDisplay: React.FC = () => {
           'text-gray-400'
         } />
         <span className="font-semibold tabular-nums">
-          {creditState.remainingCredits.toFixed(1)}
+          {credits}
         </span>
         <ChevronDown size={12} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
       </button>
@@ -2220,7 +2194,7 @@ const TabBarCreditDisplay: React.FC = () => {
                 <span className="text-sm font-semibold text-gray-900">크레딧</span>
               </div>
               <span className="text-xl font-bold tabular-nums text-gray-900">
-                {creditState.remainingCredits.toFixed(1)}
+                {credits}
               </span>
             </div>
           </div>
@@ -2230,8 +2204,8 @@ const TabBarCreditDisplay: React.FC = () => {
             {/* 프로그레스 바 */}
             <div>
               <div className="flex justify-between text-[10px] text-gray-500 mb-1">
-                <span>사용량</span>
-                <span>{creditState.usedCredits.toFixed(1)} / {creditState.dailyCredits}</span>
+                <span>남은 크레딧</span>
+                <span>{credits} / {maxCredits}</span>
               </div>
               <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div 
@@ -2240,15 +2214,21 @@ const TabBarCreditDisplay: React.FC = () => {
                     isLowCredits ? 'bg-amber-500' : 
                     'bg-gray-800'
                   }`}
-                  style={{ width: `${Math.min(usagePercentage, 100)}%` }}
+                  style={{ width: `${Math.max(100 - usagePercentage, 0)}%` }}
                 />
               </div>
             </div>
 
-            {/* 리셋 시간 */}
-            <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
-              <span>다음 리셋</span>
-              <span className="font-medium">{timeUntilReset}</span>
+            {/* 정책 안내 */}
+            <div className="flex flex-col gap-1 text-xs text-gray-500 pt-2 border-t border-gray-100">
+              <div className="flex justify-between">
+                <span>일일 충전</span>
+                <span className="font-medium">100 크레딧</span>
+              </div>
+              <div className="flex justify-between">
+                <span>월 최대</span>
+                <span className="font-medium">300 크레딧</span>
+              </div>
             </div>
 
             {/* 경고 메시지 */}
