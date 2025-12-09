@@ -1091,3 +1091,603 @@ Return the COMPLETE HTML with this single element modified.
   );
 };
 
+
+
+      setMessages(prev => {
+        const updatedMessages = prev.map(msg => 
+          msg.id === botMsgId 
+            ? { 
+                ...msg, 
+                isThinking: false,
+                creditsUsed: Math.round(variantCreditsUsed * 100) / 100,
+                tokenUsage: variantResult.tokenUsage
+              }
+            : msg
+        );
+        
+        // 완료된 봇 메시지 저장
+        const completedBotMsg = updatedMessages.find(m => m.id === botMsgId);
+        if (completedBotMsg && currentProjectId) {
+          saveMessage(completedBotMsg, currentProjectId);
+        }
+        
+        return updatedMessages;
+      });
+
+    } catch (error) {
+      console.error(error);
+      setNodes(prev => prev.filter(n => n.id !== newNodeId));
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: Role.MODEL,
+        content: "변종 생성 중 오류가 발생했습니다. 다시 시도해주세요.",
+        timestamp: Date.now()
+      }]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCreateVariant = async (prompt: string, model: ModelType) => {
+    if (!variantState.sourceNodeId || !variantState.sourceNodeHtml) return;
+    
+    const sourceNode = nodes.find(n => n.id === variantState.sourceNodeId);
+    if (!sourceNode) return;
+    
+    const currentProjectId = projectIdRef.current || project?.id;
+
+    setVariantState({
+      isActive: false,
+      sourceNodeId: null,
+      sourceNodeTitle: '',
+      sourceNodeHtml: ''
+    });
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: Role.USER,
+      content: `[${sourceNode.title} 변종 생성] ${prompt}`,
+      timestamp: Date.now()
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setIsGenerating(true);
+    
+    // 유저 메시지 저장
+    if (currentProjectId) {
+      saveMessage(userMsg, currentProjectId);
+    }
+
+    const botMsgId = (Date.now() + 1).toString();
+    const variantTitle = `${sourceNode.title} (Variant)`;
+
+    const initialSections: GenerationSection[] = [
+      { id: 'think1', type: 'thinking', label: 'Analyzing original design', status: 'active', isExpanded: false },
+      { id: 'create', type: 'action', label: 'Create Variant Node', status: 'pending' },
+      { id: 'think2', type: 'thinking', label: 'Applying modifications', status: 'pending', isExpanded: true },
+      { 
+        id: 'files', 
+        type: 'files', 
+        label: 'Generated Files', 
+        status: 'pending',
+        files: [
+          { id: 'component', path: '/src/Component.tsx', type: 'new', language: 'tsx', status: 'pending' },
+        ]
+      },
+      { id: 'build', type: 'action', label: 'Building variant', status: 'pending' },
+      { id: 'result', type: 'result', label: 'Result', status: 'pending', features: [] }
+    ];
+
+    setMessages(prev => [...prev, {
+      id: botMsgId,
+      role: Role.MODEL,
+      content: '',
+      timestamp: Date.now(),
+      isThinking: true,
+      generationSections: initialSections,
+      componentTitle: variantTitle
+    }]);
+
+    const GAP = 100;
+    const newNodeId = `node-${Date.now()}`;
+    const newNode: DesignNode = {
+      id: newNodeId,
+      type: 'component',
+      title: variantTitle,
+      html: '',
+      x: sourceNode.x + sourceNode.width + GAP,
+      y: sourceNode.y,
+      width: sourceNode.width,
+      height: sourceNode.height
+    };
+    setNodes(prev => [...prev, newNode]);
+    setFocusTrigger({ id: newNodeId, timestamp: Date.now() });
+    setSelectedNodeId(null);
+
+    try {
+      const speedFactor = model === 'fast' ? 0.5 : 1;
+      
+      await new Promise(r => setTimeout(r, 1500 * speedFactor));
+      updateSection(botMsgId, 'think1', { status: 'completed', duration: 1500 * speedFactor });
+      
+      updateSection(botMsgId, 'create', { status: 'active' });
+      await new Promise(r => setTimeout(r, 500 * speedFactor));
+      updateSection(botMsgId, 'create', { status: 'completed', duration: 500 * speedFactor });
+      
+      updateSection(botMsgId, 'think2', { status: 'active' });
+      await new Promise(r => setTimeout(r, 2000 * speedFactor));
+      updateSection(botMsgId, 'think2', { status: 'completed', duration: 2000 * speedFactor });
+      
+      updateSection(botMsgId, 'files', { status: 'active' });
+      updateFileInSection(botMsgId, 'files', 'component', { status: 'generating' });
+      
+      let fullResponse = '';
+      let lineCount = 0;
+      
+      const variantStreamResult: StreamResult = await generateDesignStream(prompt, [], variantState.sourceNodeHtml, model, (chunk) => {
+        fullResponse += chunk;
+        lineCount = (fullResponse.match(/\n/g) || []).length;
+        
+        setNodes(currentNodes => currentNodes.map(n => 
+          n.id === newNodeId 
+            ? { ...n, html: extractHtml(fullResponse) } 
+            : n
+        ));
+        
+        updateFileInSection(botMsgId, 'files', 'component', { linesAdded: lineCount });
+      });
+
+      const variantCredits = tokensToCredits(variantStreamResult.tokenUsage.totalTokenCount);
+      
+      // 로컬 크레딧 서비스에서 차감
+      creditService.deductCredits(
+        'generation',
+        variantStreamResult.tokenUsage,
+        `${sourceNode.title} 변종 생성`
+      );
+
+      updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 400 });
+      updateSection(botMsgId, 'files', { status: 'completed' });
+
+      updateSection(botMsgId, 'build', { status: 'active' });
+      await new Promise(r => setTimeout(r, 800 * speedFactor));
+      updateSection(botMsgId, 'build', { status: 'completed', duration: 800 * speedFactor });
+
+      const cleanHtml = extractHtml(fullResponse);
+      
+      updateSection(botMsgId, 'result', { 
+        status: 'completed',
+        resultSummary: `Created a variant of ${sourceNode.title} with the requested modifications.`,
+        features: ['Based on original design', 'Applied style changes', 'Maintained structure']
+      });
+
+      const finalVariantNode: DesignNode = {
+        id: newNodeId,
+        type: 'component',
+        title: variantTitle,
+        html: cleanHtml,
+        x: sourceNode.x + sourceNode.width + GAP,
+        y: sourceNode.y,
+        width: sourceNode.width,
+        height: sourceNode.height,
+      };
+
+      setNodes(currentNodes => currentNodes.map(n => 
+        n.id === newNodeId ? finalVariantNode : n
+      ));
+
+      // 변종 노드 저장
+      if (currentProjectId) {
+        console.log('[EditorPage] Saving variant node:', newNodeId);
+        await saveNodeImmediate(finalVariantNode, currentProjectId);
+      }
+
+      setMessages(prev => {
+        const updatedMessages = prev.map(msg => 
+          msg.id === botMsgId 
+            ? { 
+                ...msg, 
+                isThinking: false,
+                creditsUsed: Math.round(variantCredits * 100) / 100,
+                tokenUsage: variantStreamResult.tokenUsage
+              }
+            : msg
+        );
+        
+        // 완료된 봇 메시지 저장
+        const completedBotMsg = updatedMessages.find(m => m.id === botMsgId);
+        if (completedBotMsg && currentProjectId) {
+          saveMessage(completedBotMsg, currentProjectId);
+        }
+        
+        return updatedMessages;
+      });
+
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: Role.MODEL,
+        content: "변종 생성 중 오류가 발생했습니다. 다시 시도해주세요.",
+        timestamp: Date.now()
+      }]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="flex h-screen w-screen bg-gray-50 overflow-hidden">
+      {isSidebarOpen && (
+        <Sidebar 
+          width={sidebarWidth}
+          onResizeStart={startResizing}
+          projectName={projectName}
+          onRenameProject={(name) => {
+            setProjectName(name);
+            // 서버에도 저장
+            if (project || projectIdRef.current) {
+              updateProjectName(name);
+            }
+          }}
+          onToggleSidebar={() => setIsSidebarOpen(false)}
+          messages={messages} 
+          nodes={nodes}
+          onSendMessage={handleSendMessage}
+          isGenerating={isGenerating}
+          onFocusNode={(id) => {
+              setFocusTrigger({ id, timestamp: Date.now() });
+              setSelectedNodeId(id);
+          }}
+          onNewChat={handleNewChat}
+          selectedNodeId={selectedNodeId}
+          onClearSelection={() => setSelectedNodeId(null)}
+          variantState={variantState}
+          onCancelVariant={handleCancelVariant}
+          onCreateVariant={handleCreateVariant}
+          selectedElement={selectedElement}
+          onClearSelectedElement={() => setSelectedElement(null)}
+          onNavigateBack={onNavigateBack}
+        />
+      )}
+      {!isSidebarOpen && (
+        <div className="absolute top-3 left-3 z-50 flex gap-2">
+          <button
+            onClick={onNavigateBack}
+            className="p-2.5 bg-white border border-gray-200 shadow-lg rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all"
+            title="홈으로"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2.5 bg-white border border-gray-200 shadow-lg rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all animate-in fade-in slide-in-from-left-2"
+            title="사이드바 열기"
+          >
+            <PanelLeftOpen size={20} />
+          </button>
+        </div>
+      )}
+      <Canvas 
+        nodes={nodes}
+        isLoading={isGenerating}
+        focusTrigger={focusTrigger}
+        onUpdateNode={handleUpdateNode}
+        onAddNode={handleAddNode}
+        onDeleteNode={handleDeleteNode}
+        selectedNodeId={selectedNodeId}
+        onSelectNode={setSelectedNodeId}
+        onStartVariant={handleStartVariant}
+        onCreateVariant={handleCreateVariantFromCanvas}
+        onOpenPreviewTab={handleOpenPreviewTab}
+        previewTabs={previewTabs}
+        activeTab={activeTab}
+        onSetActiveTab={setActiveTab}
+        onClosePreviewTab={handleClosePreviewTab}
+        onSelectElement={setSelectedElement}
+        projectId={projectIdRef.current || project?.id}
+        userId={user?.id}
+      />
+    </div>
+  );
+};
+
+
+
+      setMessages(prev => {
+        const updatedMessages = prev.map(msg => 
+          msg.id === botMsgId 
+            ? { 
+                ...msg, 
+                isThinking: false,
+                creditsUsed: Math.round(variantCreditsUsed * 100) / 100,
+                tokenUsage: variantResult.tokenUsage
+              }
+            : msg
+        );
+        
+        // 완료된 봇 메시지 저장
+        const completedBotMsg = updatedMessages.find(m => m.id === botMsgId);
+        if (completedBotMsg && currentProjectId) {
+          saveMessage(completedBotMsg, currentProjectId);
+        }
+        
+        return updatedMessages;
+      });
+
+    } catch (error) {
+      console.error(error);
+      setNodes(prev => prev.filter(n => n.id !== newNodeId));
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: Role.MODEL,
+        content: "변종 생성 중 오류가 발생했습니다. 다시 시도해주세요.",
+        timestamp: Date.now()
+      }]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCreateVariant = async (prompt: string, model: ModelType) => {
+    if (!variantState.sourceNodeId || !variantState.sourceNodeHtml) return;
+    
+    const sourceNode = nodes.find(n => n.id === variantState.sourceNodeId);
+    if (!sourceNode) return;
+    
+    const currentProjectId = projectIdRef.current || project?.id;
+
+    setVariantState({
+      isActive: false,
+      sourceNodeId: null,
+      sourceNodeTitle: '',
+      sourceNodeHtml: ''
+    });
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: Role.USER,
+      content: `[${sourceNode.title} 변종 생성] ${prompt}`,
+      timestamp: Date.now()
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setIsGenerating(true);
+    
+    // 유저 메시지 저장
+    if (currentProjectId) {
+      saveMessage(userMsg, currentProjectId);
+    }
+
+    const botMsgId = (Date.now() + 1).toString();
+    const variantTitle = `${sourceNode.title} (Variant)`;
+
+    const initialSections: GenerationSection[] = [
+      { id: 'think1', type: 'thinking', label: 'Analyzing original design', status: 'active', isExpanded: false },
+      { id: 'create', type: 'action', label: 'Create Variant Node', status: 'pending' },
+      { id: 'think2', type: 'thinking', label: 'Applying modifications', status: 'pending', isExpanded: true },
+      { 
+        id: 'files', 
+        type: 'files', 
+        label: 'Generated Files', 
+        status: 'pending',
+        files: [
+          { id: 'component', path: '/src/Component.tsx', type: 'new', language: 'tsx', status: 'pending' },
+        ]
+      },
+      { id: 'build', type: 'action', label: 'Building variant', status: 'pending' },
+      { id: 'result', type: 'result', label: 'Result', status: 'pending', features: [] }
+    ];
+
+    setMessages(prev => [...prev, {
+      id: botMsgId,
+      role: Role.MODEL,
+      content: '',
+      timestamp: Date.now(),
+      isThinking: true,
+      generationSections: initialSections,
+      componentTitle: variantTitle
+    }]);
+
+    const GAP = 100;
+    const newNodeId = `node-${Date.now()}`;
+    const newNode: DesignNode = {
+      id: newNodeId,
+      type: 'component',
+      title: variantTitle,
+      html: '',
+      x: sourceNode.x + sourceNode.width + GAP,
+      y: sourceNode.y,
+      width: sourceNode.width,
+      height: sourceNode.height
+    };
+    setNodes(prev => [...prev, newNode]);
+    setFocusTrigger({ id: newNodeId, timestamp: Date.now() });
+    setSelectedNodeId(null);
+
+    try {
+      const speedFactor = model === 'fast' ? 0.5 : 1;
+      
+      await new Promise(r => setTimeout(r, 1500 * speedFactor));
+      updateSection(botMsgId, 'think1', { status: 'completed', duration: 1500 * speedFactor });
+      
+      updateSection(botMsgId, 'create', { status: 'active' });
+      await new Promise(r => setTimeout(r, 500 * speedFactor));
+      updateSection(botMsgId, 'create', { status: 'completed', duration: 500 * speedFactor });
+      
+      updateSection(botMsgId, 'think2', { status: 'active' });
+      await new Promise(r => setTimeout(r, 2000 * speedFactor));
+      updateSection(botMsgId, 'think2', { status: 'completed', duration: 2000 * speedFactor });
+      
+      updateSection(botMsgId, 'files', { status: 'active' });
+      updateFileInSection(botMsgId, 'files', 'component', { status: 'generating' });
+      
+      let fullResponse = '';
+      let lineCount = 0;
+      
+      const variantStreamResult: StreamResult = await generateDesignStream(prompt, [], variantState.sourceNodeHtml, model, (chunk) => {
+        fullResponse += chunk;
+        lineCount = (fullResponse.match(/\n/g) || []).length;
+        
+        setNodes(currentNodes => currentNodes.map(n => 
+          n.id === newNodeId 
+            ? { ...n, html: extractHtml(fullResponse) } 
+            : n
+        ));
+        
+        updateFileInSection(botMsgId, 'files', 'component', { linesAdded: lineCount });
+      });
+
+      const variantCredits = tokensToCredits(variantStreamResult.tokenUsage.totalTokenCount);
+      
+      // 로컬 크레딧 서비스에서 차감
+      creditService.deductCredits(
+        'generation',
+        variantStreamResult.tokenUsage,
+        `${sourceNode.title} 변종 생성`
+      );
+
+      updateFileInSection(botMsgId, 'files', 'component', { status: 'completed', linesAdded: lineCount || 400 });
+      updateSection(botMsgId, 'files', { status: 'completed' });
+
+      updateSection(botMsgId, 'build', { status: 'active' });
+      await new Promise(r => setTimeout(r, 800 * speedFactor));
+      updateSection(botMsgId, 'build', { status: 'completed', duration: 800 * speedFactor });
+
+      const cleanHtml = extractHtml(fullResponse);
+      
+      updateSection(botMsgId, 'result', { 
+        status: 'completed',
+        resultSummary: `Created a variant of ${sourceNode.title} with the requested modifications.`,
+        features: ['Based on original design', 'Applied style changes', 'Maintained structure']
+      });
+
+      const finalVariantNode: DesignNode = {
+        id: newNodeId,
+        type: 'component',
+        title: variantTitle,
+        html: cleanHtml,
+        x: sourceNode.x + sourceNode.width + GAP,
+        y: sourceNode.y,
+        width: sourceNode.width,
+        height: sourceNode.height,
+      };
+
+      setNodes(currentNodes => currentNodes.map(n => 
+        n.id === newNodeId ? finalVariantNode : n
+      ));
+
+      // 변종 노드 저장
+      if (currentProjectId) {
+        console.log('[EditorPage] Saving variant node:', newNodeId);
+        await saveNodeImmediate(finalVariantNode, currentProjectId);
+      }
+
+      setMessages(prev => {
+        const updatedMessages = prev.map(msg => 
+          msg.id === botMsgId 
+            ? { 
+                ...msg, 
+                isThinking: false,
+                creditsUsed: Math.round(variantCredits * 100) / 100,
+                tokenUsage: variantStreamResult.tokenUsage
+              }
+            : msg
+        );
+        
+        // 완료된 봇 메시지 저장
+        const completedBotMsg = updatedMessages.find(m => m.id === botMsgId);
+        if (completedBotMsg && currentProjectId) {
+          saveMessage(completedBotMsg, currentProjectId);
+        }
+        
+        return updatedMessages;
+      });
+
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: Role.MODEL,
+        content: "변종 생성 중 오류가 발생했습니다. 다시 시도해주세요.",
+        timestamp: Date.now()
+      }]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="flex h-screen w-screen bg-gray-50 overflow-hidden">
+      {isSidebarOpen && (
+        <Sidebar 
+          width={sidebarWidth}
+          onResizeStart={startResizing}
+          projectName={projectName}
+          onRenameProject={(name) => {
+            setProjectName(name);
+            // 서버에도 저장
+            if (project || projectIdRef.current) {
+              updateProjectName(name);
+            }
+          }}
+          onToggleSidebar={() => setIsSidebarOpen(false)}
+          messages={messages} 
+          nodes={nodes}
+          onSendMessage={handleSendMessage}
+          isGenerating={isGenerating}
+          onFocusNode={(id) => {
+              setFocusTrigger({ id, timestamp: Date.now() });
+              setSelectedNodeId(id);
+          }}
+          onNewChat={handleNewChat}
+          selectedNodeId={selectedNodeId}
+          onClearSelection={() => setSelectedNodeId(null)}
+          variantState={variantState}
+          onCancelVariant={handleCancelVariant}
+          onCreateVariant={handleCreateVariant}
+          selectedElement={selectedElement}
+          onClearSelectedElement={() => setSelectedElement(null)}
+          onNavigateBack={onNavigateBack}
+        />
+      )}
+      {!isSidebarOpen && (
+        <div className="absolute top-3 left-3 z-50 flex gap-2">
+          <button
+            onClick={onNavigateBack}
+            className="p-2.5 bg-white border border-gray-200 shadow-lg rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all"
+            title="홈으로"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2.5 bg-white border border-gray-200 shadow-lg rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all animate-in fade-in slide-in-from-left-2"
+            title="사이드바 열기"
+          >
+            <PanelLeftOpen size={20} />
+          </button>
+        </div>
+      )}
+      <Canvas 
+        nodes={nodes}
+        isLoading={isGenerating}
+        focusTrigger={focusTrigger}
+        onUpdateNode={handleUpdateNode}
+        onAddNode={handleAddNode}
+        onDeleteNode={handleDeleteNode}
+        selectedNodeId={selectedNodeId}
+        onSelectNode={setSelectedNodeId}
+        onStartVariant={handleStartVariant}
+        onCreateVariant={handleCreateVariantFromCanvas}
+        onOpenPreviewTab={handleOpenPreviewTab}
+        previewTabs={previewTabs}
+        activeTab={activeTab}
+        onSetActiveTab={setActiveTab}
+        onClosePreviewTab={handleClosePreviewTab}
+        onSelectElement={setSelectedElement}
+        projectId={projectIdRef.current || project?.id}
+        userId={user?.id}
+      />
+    </div>
+  );
+};
+

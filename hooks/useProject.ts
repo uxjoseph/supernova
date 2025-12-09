@@ -540,3 +540,449 @@ export const useProject = (): UseProjectReturn => {
 
 export default useProject;
 
+
+  );
+
+  // Save a single node (debounced)
+  const saveNode = useCallback((node: DesignNode, projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid) {
+      console.warn('[useProject] Cannot save node: no project ID');
+      return;
+    }
+    
+    pendingSaves.current.set(node.id, node);
+    if (projectId) {
+      // If explicit projectId provided, flush immediately with that ID
+      flushPendingSaves(projectId);
+    } else {
+      debouncedFlush();
+    }
+  }, [debouncedFlush, flushPendingSaves]);
+
+  // Save multiple nodes
+  const saveNodes = useCallback((nodes: DesignNode[], projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid) {
+      console.warn('[useProject] Cannot save nodes: no project ID');
+      return;
+    }
+    
+    nodes.forEach(node => pendingSaves.current.set(node.id, node));
+    if (projectId) {
+      flushPendingSaves(projectId);
+    } else {
+      debouncedFlush();
+    }
+  }, [debouncedFlush, flushPendingSaves]);
+
+  // Save a node immediately (for critical saves)
+  const saveNodeImmediate = useCallback(async (node: DesignNode, projectId: string) => {
+    if (!isSupabaseConfigured()) return;
+
+    setIsSaving(true);
+    try {
+      const canvasNode = designNodeToCanvasNode(node, projectId);
+      
+      const { error } = await supabase
+        .from('canvas_nodes')
+        .upsert(canvasNode, { onConflict: 'id' });
+
+      if (error) throw error;
+      
+      setLastSaved(new Date());
+      console.log('[useProject] Immediate save successful for node:', node.id);
+    } catch (error) {
+      console.error('Error saving node immediately:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, []);
+
+  // Delete a node
+  const deleteNode = useCallback(async (nodeId: string) => {
+    if (!project || !isSupabaseConfigured()) return;
+
+    // Remove from pending saves if exists
+    pendingSaves.current.delete(nodeId);
+
+    try {
+      const { error } = await supabase
+        .from('canvas_nodes')
+        .delete()
+        .eq('id', nodeId);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error deleting node:', error);
+    }
+  }, [project]);
+
+  // Load all nodes for current project
+  const loadNodes = useCallback(async (): Promise<DesignNode[]> => {
+    if (!project || !isSupabaseConfigured()) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('canvas_nodes')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      
+      return (data as CanvasNode[]).map(canvasNodeToDesignNode);
+    } catch (error) {
+      console.error('Error loading nodes:', error);
+      return [];
+    }
+  }, [project]);
+
+  // Save a single message
+  const saveMessage = useCallback(async (message: Message, projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid || !isSupabaseConfigured()) {
+      console.warn('[useProject] Cannot save message: no project ID');
+      return;
+    }
+
+    try {
+      const dbMessage = messageToDbMessage(message, pid);
+      const { error } = await supabase
+        .from('chat_messages')
+        .upsert(dbMessage, { onConflict: 'id' });
+
+      if (error) throw error;
+      console.log('[useProject] Message saved:', message.id);
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
+  }, []);
+
+  // Save multiple messages
+  const saveMessages = useCallback(async (messages: Message[], projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid || !isSupabaseConfigured() || messages.length === 0) return;
+
+    try {
+      const dbMessages = messages.map(msg => messageToDbMessage(msg, pid));
+      const { error } = await supabase
+        .from('chat_messages')
+        .upsert(dbMessages, { onConflict: 'id' });
+
+      if (error) throw error;
+      console.log('[useProject] Messages saved:', messages.length);
+    } catch (error) {
+      console.error('Error saving messages:', error);
+    }
+  }, []);
+
+  // Update a message (for updating isThinking, generationSections, etc.)
+  const updateMessage = useCallback(async (message: Message, projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid || !isSupabaseConfigured()) return;
+
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .update({
+          content: message.content || null,
+          is_thinking: message.isThinking || false,
+          generation_sections: message.generationSections || null,
+        })
+        .eq('id', message.id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating message:', error);
+    }
+  }, []);
+
+  // Load all messages for current project
+  const loadMessages = useCallback(async (): Promise<Message[]> => {
+    if (!project || !isSupabaseConfigured()) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        // 테이블이 없을 수 있음 - 빈 배열 반환
+        console.warn('[useProject] Error loading messages (table may not exist):', error.message);
+        return [];
+      }
+      
+      return (data as ChatMessage[]).map(dbMessageToMessage);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      return [];
+    }
+  }, [project]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      // Final flush of pending saves
+      if (pendingSaves.current.size > 0) {
+        flushPendingSaves();
+      }
+    };
+  }, [flushPendingSaves]);
+
+  return {
+    project,
+    projects,
+    isLoading,
+    isSaving,
+    lastSaved,
+    createProject,
+    loadProject,
+    updateProjectName,
+    updateProjectThumbnail,
+    deleteProject,
+    loadProjects,
+    saveNode,
+    saveNodes,
+    saveNodeImmediate,
+    deleteNode,
+    loadNodes,
+    setProject,
+    // Message related
+    saveMessage,
+    saveMessages,
+    loadMessages,
+    updateMessage,
+  };
+};
+
+export default useProject;
+
+
+  );
+
+  // Save a single node (debounced)
+  const saveNode = useCallback((node: DesignNode, projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid) {
+      console.warn('[useProject] Cannot save node: no project ID');
+      return;
+    }
+    
+    pendingSaves.current.set(node.id, node);
+    if (projectId) {
+      // If explicit projectId provided, flush immediately with that ID
+      flushPendingSaves(projectId);
+    } else {
+      debouncedFlush();
+    }
+  }, [debouncedFlush, flushPendingSaves]);
+
+  // Save multiple nodes
+  const saveNodes = useCallback((nodes: DesignNode[], projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid) {
+      console.warn('[useProject] Cannot save nodes: no project ID');
+      return;
+    }
+    
+    nodes.forEach(node => pendingSaves.current.set(node.id, node));
+    if (projectId) {
+      flushPendingSaves(projectId);
+    } else {
+      debouncedFlush();
+    }
+  }, [debouncedFlush, flushPendingSaves]);
+
+  // Save a node immediately (for critical saves)
+  const saveNodeImmediate = useCallback(async (node: DesignNode, projectId: string) => {
+    if (!isSupabaseConfigured()) return;
+
+    setIsSaving(true);
+    try {
+      const canvasNode = designNodeToCanvasNode(node, projectId);
+      
+      const { error } = await supabase
+        .from('canvas_nodes')
+        .upsert(canvasNode, { onConflict: 'id' });
+
+      if (error) throw error;
+      
+      setLastSaved(new Date());
+      console.log('[useProject] Immediate save successful for node:', node.id);
+    } catch (error) {
+      console.error('Error saving node immediately:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, []);
+
+  // Delete a node
+  const deleteNode = useCallback(async (nodeId: string) => {
+    if (!project || !isSupabaseConfigured()) return;
+
+    // Remove from pending saves if exists
+    pendingSaves.current.delete(nodeId);
+
+    try {
+      const { error } = await supabase
+        .from('canvas_nodes')
+        .delete()
+        .eq('id', nodeId);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error deleting node:', error);
+    }
+  }, [project]);
+
+  // Load all nodes for current project
+  const loadNodes = useCallback(async (): Promise<DesignNode[]> => {
+    if (!project || !isSupabaseConfigured()) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('canvas_nodes')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      
+      return (data as CanvasNode[]).map(canvasNodeToDesignNode);
+    } catch (error) {
+      console.error('Error loading nodes:', error);
+      return [];
+    }
+  }, [project]);
+
+  // Save a single message
+  const saveMessage = useCallback(async (message: Message, projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid || !isSupabaseConfigured()) {
+      console.warn('[useProject] Cannot save message: no project ID');
+      return;
+    }
+
+    try {
+      const dbMessage = messageToDbMessage(message, pid);
+      const { error } = await supabase
+        .from('chat_messages')
+        .upsert(dbMessage, { onConflict: 'id' });
+
+      if (error) throw error;
+      console.log('[useProject] Message saved:', message.id);
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
+  }, []);
+
+  // Save multiple messages
+  const saveMessages = useCallback(async (messages: Message[], projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid || !isSupabaseConfigured() || messages.length === 0) return;
+
+    try {
+      const dbMessages = messages.map(msg => messageToDbMessage(msg, pid));
+      const { error } = await supabase
+        .from('chat_messages')
+        .upsert(dbMessages, { onConflict: 'id' });
+
+      if (error) throw error;
+      console.log('[useProject] Messages saved:', messages.length);
+    } catch (error) {
+      console.error('Error saving messages:', error);
+    }
+  }, []);
+
+  // Update a message (for updating isThinking, generationSections, etc.)
+  const updateMessage = useCallback(async (message: Message, projectId?: string) => {
+    const pid = projectId || currentProjectIdRef.current;
+    if (!pid || !isSupabaseConfigured()) return;
+
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .update({
+          content: message.content || null,
+          is_thinking: message.isThinking || false,
+          generation_sections: message.generationSections || null,
+        })
+        .eq('id', message.id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating message:', error);
+    }
+  }, []);
+
+  // Load all messages for current project
+  const loadMessages = useCallback(async (): Promise<Message[]> => {
+    if (!project || !isSupabaseConfigured()) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        // 테이블이 없을 수 있음 - 빈 배열 반환
+        console.warn('[useProject] Error loading messages (table may not exist):', error.message);
+        return [];
+      }
+      
+      return (data as ChatMessage[]).map(dbMessageToMessage);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      return [];
+    }
+  }, [project]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      // Final flush of pending saves
+      if (pendingSaves.current.size > 0) {
+        flushPendingSaves();
+      }
+    };
+  }, [flushPendingSaves]);
+
+  return {
+    project,
+    projects,
+    isLoading,
+    isSaving,
+    lastSaved,
+    createProject,
+    loadProject,
+    updateProjectName,
+    updateProjectThumbnail,
+    deleteProject,
+    loadProjects,
+    saveNode,
+    saveNodes,
+    saveNodeImmediate,
+    deleteNode,
+    loadNodes,
+    setProject,
+    // Message related
+    saveMessage,
+    saveMessages,
+    loadMessages,
+    updateMessage,
+  };
+};
+
+export default useProject;
+
