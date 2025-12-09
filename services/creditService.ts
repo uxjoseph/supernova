@@ -143,7 +143,11 @@ class CreditService {
   // 상태 변경 구독
   subscribe(listener: (state: CreditState) => void): () => void {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    console.log('[CreditService] Listener added, total listeners:', this.listeners.size);
+    return () => {
+      this.listeners.delete(listener);
+      console.log('[CreditService] Listener removed, total listeners:', this.listeners.size);
+    };
   }
 
   // 현재 상태 조회
