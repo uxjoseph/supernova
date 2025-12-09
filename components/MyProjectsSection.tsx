@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { FolderOpen, Clock, Plus, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,60 +16,56 @@ export const MyProjectsSection: React.FC<MyProjectsSectionProps> = ({
 }) => {
   const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const loadingRef = useRef(false);
 
-  // 프로젝트 로드 함수
-  const loadProjects = useCallback(async () => {
-    if (!user || !isSupabaseConfigured()) {
-      console.log('[Projects] No user or Supabase not configured');
-      setHasLoaded(true);
+  // 프로젝트 로드
+  useEffect(() => {
+    if (!user) {
+      setProjects([]);
       setIsLoading(false);
       return;
     }
-
-    setIsLoading(true);
-    console.log('[Projects] Loading projects for user:', user.id);
     
-    try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false });
-
-      if (error) {
-        console.error('[Projects] Error:', error);
-        setProjects([]);
-      } else {
-        console.log('[Projects] Loaded:', data?.length || 0, 'projects');
-        setProjects(data as Project[]);
-      }
-    } catch (error) {
-      console.error('[Projects] Error loading projects:', error);
-      setProjects([]);
-    } finally {
+    if (!isSupabaseConfigured()) {
+      console.log('[Projects] Supabase not configured');
       setIsLoading(false);
-      setHasLoaded(true);
+      return;
     }
+    
+    // 중복 로드 방지
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    
+    console.log('[Projects] Loading for user:', user.id);
+    setIsLoading(true);
+    
+    supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .then(({ data, error }) => {
+        loadingRef.current = false;
+        if (error) {
+          console.error('[Projects] Error:', error);
+          setProjects([]);
+        } else {
+          console.log('[Projects] Loaded:', data?.length || 0);
+          setProjects(data as Project[] || []);
+        }
+        setIsLoading(false);
+      });
+      
+    return () => {
+      loadingRef.current = false;
+    };
   }, [user]);
-
-  // 컴포넌트 마운트 시 프로젝트 로드
-  useEffect(() => {
-    // user가 있고 아직 로드하지 않았으면 로드
-    if (user && !hasLoaded) {
-      loadProjects();
-    }
-    // user가 없으면 초기화
-    if (!user) {
-      setProjects([]);
-      setHasLoaded(false);
-      setIsLoading(false);
-    }
-  }, [user, hasLoaded, loadProjects]);
 
   // 로그인하지 않은 경우 표시하지 않음
   if (!user) return null;
+  
+  const hasLoaded = !isLoading;
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);

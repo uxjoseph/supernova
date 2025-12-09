@@ -67,121 +67,72 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [user, fetchProfile]);
 
-  // Initialize auth state
+  // Initialize auth state - 최대한 단순하게
   useEffect(() => {
     if (!isConfigured) {
-      console.log('[Auth] Supabase not configured, skipping auth');
+      console.log('[Auth] Supabase not configured');
       setIsLoading(false);
       return;
     }
 
-    let isMounted = true;
+    // 즉시 로딩 완료 - UI가 멈추지 않도록
+    setIsLoading(false);
 
-    // Get initial session - 단순하게!
-    const initSession = async () => {
-      try {
-        console.log('[Auth] Getting initial session...');
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (!isMounted) return;
-        
-        if (error) {
-          console.error('[Auth] Error getting session:', error);
-          setIsLoading(false);
-          return;
-        }
-        
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          console.log('[Auth] User found:', session.user.email);
-          try {
-            const profile = await fetchProfile(session.user.id);
-            if (isMounted) setProfile(profile);
-          } catch (e) {
-            console.error('[Auth] Profile fetch error:', e);
-          }
-        } else {
-          console.log('[Auth] No user session');
-        }
-        
-        if (isMounted) {
-          console.log('[Auth] Session init complete');
-          setIsLoading(false);
-        }
-      } catch (error) {
-        console.error('[Auth] Session init error:', error);
-        if (isMounted) setIsLoading(false);
+    // Get session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[Auth] Session loaded:', session?.user?.email || 'none');
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        fetchProfile(session.user.id).then(p => {
+          console.log('[Auth] Profile loaded:', p?.email || 'none');
+          setProfile(p);
+        }).catch(console.error);
       }
-    };
-    
-    initSession();
+    }).catch(err => {
+      console.error('[Auth] getSession error:', err);
+    });
 
-    // Listen for auth changes
+    // Auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event: AuthChangeEvent, session) => {
-        console.log('[Auth] Auth state changed:', event);
-        
-        if (!isMounted) return;
-        
-        // SIGNED_OUT 이벤트는 즉시 처리
-        if (event === 'SIGNED_OUT') {
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          setIsLoading(false);
-          console.log('[Auth] Signed out');
-          return;
-        }
+      (event: AuthChangeEvent, session) => {
+        console.log('[Auth] State changed:', event, session?.user?.email);
         
         setSession(session);
         setUser(session?.user ?? null);
 
-        if (session?.user) {
-          // Fetch or create profile
-          try {
-            const userProfile = await fetchProfile(session.user.id);
-            if (isMounted) setProfile(userProfile);
-
-            // If profile doesn't exist yet, create it
-            if (!userProfile && event === 'SIGNED_IN') {
-              const { data: newProfile, error } = await supabase
-                .from('profiles')
-                .insert({
-                  id: session.user.id,
-                  email: session.user.email,
-                  name: session.user.user_metadata?.full_name || session.user.user_metadata?.name,
-                  avatar_url: session.user.user_metadata?.avatar_url,
-                  plan_type: 'free',
-                  credits_remaining: 100,
-                  credits_max: 300,
-                })
-                .select()
-                .single();
-
-              if (newProfile && isMounted) {
-                setProfile(newProfile as Profile);
-              }
-              if (error) {
-                console.error('[Auth] Error creating profile:', error);
-              }
-            }
-          } catch (err) {
-            console.error('[Auth] Profile error:', err);
-          }
-        } else {
-          if (isMounted) setProfile(null);
+        if (event === 'SIGNED_OUT') {
+          setProfile(null);
+          return;
         }
 
-        if (isMounted) setIsLoading(false);
+        if (session?.user) {
+          fetchProfile(session.user.id).then(p => {
+            setProfile(p);
+            
+            // Profile 없으면 생성
+            if (!p && event === 'SIGNED_IN') {
+              supabase.from('profiles').insert({
+                id: session.user.id,
+                email: session.user.email,
+                name: session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+                avatar_url: session.user.user_metadata?.avatar_url,
+                plan_type: 'free',
+                credits_remaining: 100,
+                credits_max: 300,
+              }).select().single().then(({ data }) => {
+                if (data) setProfile(data as Profile);
+              });
+            }
+          }).catch(console.error);
+        } else {
+          setProfile(null);
+        }
       }
     );
 
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, [isConfigured, fetchProfile]);
 
   // Sign in with Google

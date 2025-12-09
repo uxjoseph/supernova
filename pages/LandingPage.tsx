@@ -140,13 +140,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
               >
                 {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
               </button>
-              {/* Auth Section */}
-              {!authLoading && (
-                user ? (
-                  <UserMenu />
-                ) : (
-                  <AuthButton variant="outline" size="sm" />
-                )
+              {/* Auth Section - 로딩 중에도 항상 표시 */}
+              {user ? (
+                <UserMenu />
+              ) : (
+                <AuthButton variant="outline" size="sm" />
               )}
             </div>
           </div>
