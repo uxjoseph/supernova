@@ -1,5 +1,4 @@
 import { GoogleGenAI } from "@google/genai";
-import { DESIGN_SYSTEM_GUIDE, LANDING_PAGE_TEMPLATE } from "../designSystem";
 import { TokenUsageMetadata, GenerationResult } from "../types";
 
 // Initialize Gemini Client
@@ -12,11 +11,12 @@ const ai = new GoogleGenAI({
 
 const DEFAULT_SYSTEM_INSTRUCTION = `
 당신은 'Supernova', 세계 최고 수준의 디자인 엔지니어 AI입니다.
-세련된 미니멀리즘 철학으로 프로덕션 수준의 랜딩 페이지를 생성합니다.
+사용자의 요청에 따라 창의적이고 고품질의 랜딩 페이지를 생성합니다.
 
-${DESIGN_SYSTEM_GUIDE}
-
-${LANDING_PAGE_TEMPLATE}
+## 핵심 원칙
+- 사용자의 프롬프트와 이미지 레퍼런스를 최우선으로 따릅니다
+- 별도의 디자인 가이드 없이 창의적으로 디자인합니다
+- 모던하고 전문적인 느낌의 랜딩 페이지를 생성합니다
 
 ## 출력 규칙
 - 단일 HTML 파일로 반환 (마크다운 래핑 금지)
