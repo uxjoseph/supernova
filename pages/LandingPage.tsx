@@ -92,6 +92,60 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
     e.target.value = '';
   };
 
+  // Handle paste event for images (supports multiple)
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    let imageFound = false;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      
+      // Check if the item is an image
+      if (item.type.startsWith('image/')) {
+        imageFound = true;
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setReferenceImages(prev => [...prev, reader.result as string]);
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+    
+    // Prevent default only if we found at least one image
+    if (imageFound) {
+      e.preventDefault();
+    }
+  };
+
+  // Handle drag and drop for images
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      Array.from(files).forEach(file => {
+        if (file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setReferenceImages(prev => [...prev, reader.result as string]);
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   const handleTagClick = (tag: string) => {
     setInput(tag);
     // textarea에 포커스
@@ -195,7 +249,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
 
           {/* Prompt Input */}
           <div className="w-full max-w-2xl mx-auto">
-            <div className="relative bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 focus-within:ring-2 focus-within:ring-gray-900/5 dark:focus-within:ring-white/10 focus-within:border-gray-300 dark:focus-within:border-gray-700 transition-all duration-200 shadow-lg">
+            <div 
+              className="relative bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 focus-within:ring-2 focus-within:ring-gray-900/5 dark:focus-within:ring-white/10 focus-within:border-gray-300 dark:focus-within:border-gray-700 transition-all duration-200 shadow-lg"
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+            >
               
               <div className="p-4">
                 <textarea
@@ -203,6 +261,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
                   value={input}
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
                   placeholder={t.hero.placeholder}
                   className="w-full resize-none outline-none text-base text-gray-900 dark:text-white placeholder-gray-400 bg-transparent min-h-[56px] max-h-[200px] leading-relaxed"
                   rows={1}
