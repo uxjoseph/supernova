@@ -4,9 +4,11 @@ import { LandingPage } from './pages/LandingPage';
 import { EditorPage } from './pages/EditorPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { PublishedPage } from './pages/PublishedPage';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
+import { TermsOfServicePage } from './pages/TermsOfServicePage';
 import { ModelType } from './services/geminiService';
 
-type Page = 'landing' | 'editor' | 'settings' | 'published';
+type Page = 'landing' | 'editor' | 'settings' | 'published' | 'privacy' | 'terms';
 
 interface EditorState {
   prompt: string;
@@ -27,6 +29,16 @@ const getRouteFromUrl = (): { page: Page; slug?: string } => {
     }
   }
   
+  // Check for privacy policy route
+  if (path === '/privacy') {
+    return { page: 'privacy' };
+  }
+  
+  // Check for terms of service route
+  if (path === '/terms') {
+    return { page: 'terms' };
+  }
+  
   return { page: 'landing' };
 };
 
@@ -42,6 +54,12 @@ const AppContent: React.FC = () => {
       if (route.page === 'published' && route.slug) {
         setCurrentPage('published');
         setPublishedSlug(route.slug);
+      } else if (route.page === 'privacy') {
+        setCurrentPage('privacy');
+      } else if (route.page === 'terms') {
+        setCurrentPage('terms');
+      } else {
+        setCurrentPage('landing');
       }
     };
 
@@ -77,6 +95,26 @@ const AppContent: React.FC = () => {
     setCurrentPage('settings');
   };
 
+  const handleNavigateToPrivacy = () => {
+    setCurrentPage('privacy');
+    window.history.pushState({}, '', '/privacy');
+  };
+
+  const handleNavigateToTerms = () => {
+    setCurrentPage('terms');
+    window.history.pushState({}, '', '/terms');
+  };
+
+  // Privacy Policy page
+  if (currentPage === 'privacy') {
+    return <PrivacyPolicyPage onNavigateBack={handleNavigateToLanding} />;
+  }
+
+  // Terms of Service page
+  if (currentPage === 'terms') {
+    return <TermsOfServicePage onNavigateBack={handleNavigateToLanding} />;
+  }
+
   // Published page (public access)
   if (currentPage === 'published' && publishedSlug) {
     return (
@@ -88,7 +126,13 @@ const AppContent: React.FC = () => {
   }
 
   if (currentPage === 'landing') {
-    return <LandingPage onNavigateToEditor={handleNavigateToEditor} />;
+    return (
+      <LandingPage 
+        onNavigateToEditor={handleNavigateToEditor}
+        onNavigateToPrivacy={handleNavigateToPrivacy}
+        onNavigateToTerms={handleNavigateToTerms}
+      />
+    );
   }
 
   if (currentPage === 'settings') {

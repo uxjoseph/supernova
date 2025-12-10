@@ -12,9 +12,11 @@ import { ModelType } from '../services/geminiService';
 
 interface LandingPageProps {
   onNavigateToEditor: (prompt: string, images?: string[], projectId?: string, modelType?: ModelType) => void;
+  onNavigateToPrivacy?: () => void;
+  onNavigateToTerms?: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor, onNavigateToPrivacy, onNavigateToTerms }) => {
   const { user, isLoading: authLoading, signInWithGoogle, isConfigured } = useAuth();
   
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -415,6 +417,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToEditor }) 
 
       {/* Footer */}
       <footer className="absolute bottom-0 left-0 right-0 py-6 text-center">
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <button
+            onClick={onNavigateToPrivacy}
+            className="text-[11px] text-gray-400 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400 transition-colors underline-offset-2 hover:underline"
+          >
+            개인정보처리방침
+          </button>
+          <span className="text-gray-300 dark:text-gray-700">·</span>
+          <button
+            onClick={onNavigateToTerms}
+            className="text-[11px] text-gray-400 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400 transition-colors underline-offset-2 hover:underline"
+          >
+            이용약관
+          </button>
+        </div>
         <p className="text-xs text-gray-400 dark:text-gray-600">
           {t.footer.copyright}
         </p>
