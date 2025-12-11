@@ -300,6 +300,9 @@ export const EditorPage: React.FC<EditorPageProps> = ({
   }, []);
 
   const handleSendMessage = async (content: string, images: string[], model: ModelType) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EditorPage.tsx:handleSendMessage:entry',message:'handleSendMessage called',data:{content:content.substring(0,50),hasImages:images.length>0,selectedNodeId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     const userMsg: Message = {
       id: Date.now().toString(),
       role: Role.USER,
@@ -360,6 +363,9 @@ export const EditorPage: React.FC<EditorPageProps> = ({
        if (targetNode && targetNode.html) {
           previousCode = targetNode.html;
        }
+       // #region agent log
+       fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EditorPage.tsx:handleSendMessage:modifyExisting',message:'Modifying existing node',data:{targetNodeId,hasPreviousCode:!!previousCode,previousCodeLength:previousCode?.length||0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+       // #endregion
     } else {
        const GAP = 100;
        const DEFAULT_WIDTH = 1440;
@@ -446,9 +452,16 @@ Return the COMPLETE HTML with this single element modified.
          fullResponse += chunk;
          lineCount = (fullResponse.match(/\n/g) || []).length;
          
+         const extractedHtml = extractHtml(fullResponse);
+         // #region agent log
+         if (fullResponse.length < 200 || fullResponse.length % 1000 < 50) {
+           fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EditorPage.tsx:handleSendMessage:streamUpdate',message:'Streaming update',data:{targetNodeId,fullResponseLength:fullResponse.length,extractedHtmlLength:extractedHtml.length,extractedHtmlStart:extractedHtml.substring(0,100),hasDoctype:extractedHtml.includes('<!DOCTYPE')},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+         }
+         // #endregion
+         
          setNodes(currentNodes => currentNodes.map(n => 
            n.id === targetNodeId 
-             ? { ...n, html: extractHtml(fullResponse) } 
+             ? { ...n, html: extractedHtml } 
              : n
          ));
          
@@ -495,6 +508,10 @@ Return the COMPLETE HTML with this single element modified.
         width: nodes.find(n => n.id === targetNodeId)?.width || 1440,
         height: nodes.find(n => n.id === targetNodeId)?.height || 900,
       };
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EditorPage.tsx:handleSendMessage:finalNode',message:'Setting final node',data:{targetNodeId,cleanHtmlLength:cleanHtml.length,hasDoctype:cleanHtml.includes('<!DOCTYPE'),hasClosingHtml:cleanHtml.includes('</html>')},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
 
       setNodes(currentNodes => currentNodes.map(n => 
         n.id === targetNodeId ? finalNode : n
@@ -561,19 +578,28 @@ Return the COMPLETE HTML with this single element modified.
   const handleSendMessageRef = useRef(handleSendMessage);
   handleSendMessageRef.current = handleSendMessage;
 
-  // 초기 프롬프트가 있으면 자동으로 생성 시작
+  // 초기값들을 ref로 저장 (의존성 배열에서 제외하기 위함)
+  const initialPromptRef = useRef(initialPrompt);
+  const initialImagesRef = useRef(initialImages);
+  const initialModelTypeRef = useRef(initialModelType);
+
+  // 초기 프롬프트가 있으면 자동으로 생성 시작 (마운트 시 한 번만)
   useEffect(() => {
-    if (initialPrompt && !hasInitializedRef.current) {
+    const prompt = initialPromptRef.current;
+    const images = initialImagesRef.current;
+    const modelType = initialModelTypeRef.current;
+    
+    if (prompt && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
       
       // 약간의 딜레이 후 생성 시작 (cleanup에서 취소하지 않음)
       setTimeout(() => {
         if (handleSendMessageRef.current) {
-          handleSendMessageRef.current(initialPrompt, initialImages, initialModelType || 'fast');
+          handleSendMessageRef.current(prompt, images, modelType || 'fast');
         }
       }, 300);
     }
-  }, [initialPrompt, initialImages, initialModelType]);
+  }, []); // 빈 의존성 배열 - 마운트 시 한 번만 실행
 
   const handleUpdateNode = (updatedNode: DesignNode) => {
     setNodes(prev => prev.map(n => n.id === updatedNode.id ? updatedNode : n));

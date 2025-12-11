@@ -404,6 +404,9 @@ export const Canvas: React.FC<CanvasProps> = ({
   useEffect(() => {
     nodes.forEach(node => {
       if (node.type === 'component' && node.html && isHtmlComplete(node.html)) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Canvas.tsx:cacheUpdate',message:'Caching completed HTML',data:{nodeId:node.id,htmlLength:node.html.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         setCompletedHtmlCache(prev => {
           const newCache = new Map(prev);
           // 새로운 완성된 HTML이 기존과 다를 때만 업데이트
@@ -418,6 +421,14 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   // 노드별로 표시할 HTML 결정 (완성된 것 또는 캐시된 것)
   const getDisplayHtml = (node: DesignNode): string | null => {
+    // #region agent log
+    const nodeHtmlLength = node.html?.length || 0;
+    const isComplete = node.html ? isHtmlComplete(node.html) : false;
+    const hasCached = completedHtmlCache.has(node.id);
+    const cachedLength = completedHtmlCache.get(node.id)?.length || 0;
+    fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Canvas.tsx:getDisplayHtml',message:'getDisplayHtml called',data:{nodeId:node.id,nodeHtmlLength,isComplete,hasCached,cachedLength,nodeHtmlEmpty:!node.html},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
     if (!node.html) return null;
     
     // HTML이 완성되었으면 현재 HTML 사용
@@ -1479,6 +1490,9 @@ export const Canvas: React.FC<CanvasProps> = ({
                       {(() => {
                         const displayHtml = getDisplayHtml(node);
                         const isGenerating = node.html && !isHtmlComplete(node.html);
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Canvas.tsx:renderNode',message:'Rendering node',data:{nodeId:node.id,hasDisplayHtml:!!displayHtml,displayHtmlLength:displayHtml?.length||0,isGenerating,nodeHtmlLength:node.html?.length||0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+                        // #endregion
                         
                         if (displayHtml) {
                           return (

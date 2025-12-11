@@ -11,6 +11,7 @@ import { ModelType } from './services/geminiService';
 type Page = 'landing' | 'editor' | 'settings' | 'published' | 'privacy' | 'terms';
 
 interface EditorState {
+  id: string; // 고유 세션 ID
   prompt: string;
   images: string[];
   projectId?: string;
@@ -73,6 +74,7 @@ const AppContent: React.FC = () => {
 
   const handleNavigateToEditor = (prompt: string, images?: string[], projectId?: string, modelType?: ModelType) => {
     setEditorState({
+      id: `editor-${Date.now()}`, // 고유 세션 ID로 재마운트 방지
       prompt,
       images: images || [],
       projectId,
@@ -141,7 +143,7 @@ const AppContent: React.FC = () => {
 
   return (
     <EditorPage 
-      key={editorState?.projectId || editorState?.prompt || 'new-editor'}
+      key={editorState?.id || editorState?.projectId || 'new-editor'}
       initialPrompt={editorState?.prompt}
       initialImages={editorState?.images}
       initialProjectId={editorState?.projectId}

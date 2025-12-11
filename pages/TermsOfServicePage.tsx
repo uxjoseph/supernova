@@ -279,3 +279,4 @@ export const TermsOfServicePage: React.FC<TermsOfServicePageProps> = ({ onNaviga
   );
 };
 
+
