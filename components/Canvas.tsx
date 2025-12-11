@@ -405,6 +405,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     nodes.forEach(node => {
       if (node.type === 'component' && node.html && isHtmlComplete(node.html)) {
         // #region agent log
+        console.log('[DEBUG cacheUpdate] Caching completed HTML for node:', node.id, 'length:', node.html.length);
         fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Canvas.tsx:cacheUpdate',message:'Caching completed HTML',data:{nodeId:node.id,htmlLength:node.html.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
         // #endregion
         setCompletedHtmlCache(prev => {
@@ -426,23 +427,25 @@ export const Canvas: React.FC<CanvasProps> = ({
     const isComplete = node.html ? isHtmlComplete(node.html) : false;
     const hasCached = completedHtmlCache.has(node.id);
     const cachedLength = completedHtmlCache.get(node.id)?.length || 0;
+    console.log('[DEBUG getDisplayHtml]', { nodeId: node.id, nodeHtmlLength, isComplete, hasCached, cachedLength, nodeHtmlEmpty: !node.html });
     fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Canvas.tsx:getDisplayHtml',message:'getDisplayHtml called',data:{nodeId:node.id,nodeHtmlLength,isComplete,hasCached,cachedLength,nodeHtmlEmpty:!node.html},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
     // #endregion
     
-    if (!node.html) return null;
-    
     // HTML이 완성되었으면 현재 HTML 사용
-    if (isHtmlComplete(node.html)) {
+    if (node.html && isHtmlComplete(node.html)) {
       return node.html;
     }
     
-    // 완성되지 않았으면 캐시된 완성 버전 사용 (있으면)
+    // 완성되지 않았거나 없으면 캐시된 완성 버전 사용 (있으면)
+    // 수정 중에도 이전 완성된 버전을 보여주기 위함
     const cachedHtml = completedHtmlCache.get(node.id);
     if (cachedHtml) {
+      console.log('[DEBUG getDisplayHtml] Using cached HTML for node:', node.id);
       return cachedHtml;
     }
     
-    // 캐시도 없으면 null (스켈레톤 표시)
+    // 캐시도 없으면 null (스켈레톤 표시) - 새 노드 생성 중일 때
+    console.log('[DEBUG getDisplayHtml] No cache, returning null for node:', node.id);
     return null;
   };
 
@@ -1491,6 +1494,8 @@ export const Canvas: React.FC<CanvasProps> = ({
                         const displayHtml = getDisplayHtml(node);
                         const isGenerating = node.html && !isHtmlComplete(node.html);
                         // #region agent log
+                        const iframeKeyBefore = `iframe-${node.id}-${isHtmlComplete(node.html || '') ? 'complete' : 'cached'}`;
+                        console.log('[DEBUG Canvas] Rendering node:', { nodeId: node.id, hasDisplayHtml: !!displayHtml, displayHtmlLength: displayHtml?.length || 0, isGenerating, nodeHtmlLength: node.html?.length || 0, iframeKey: iframeKeyBefore, hasCached: completedHtmlCache.has(node.id) });
                         fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Canvas.tsx:renderNode',message:'Rendering node',data:{nodeId:node.id,hasDisplayHtml:!!displayHtml,displayHtmlLength:displayHtml?.length||0,isGenerating,nodeHtmlLength:node.html?.length||0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
                         // #endregion
                         
@@ -1502,7 +1507,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                                     if (el) iframeRefs.current.set(node.id, el);
                                     else iframeRefs.current.delete(node.id);
                                 }}
-                                key={`iframe-${node.id}-${isHtmlComplete(node.html || '') ? 'complete' : 'cached'}`}
+                                key={`iframe-${node.id}`}
                                 data-node-id={node.id}
                                 srcDoc={getInteractableHtml(displayHtml, node.id)}
                                 className={`w-full h-full border-none pointer-events-auto transition-opacity duration-300 ${isGenerating ? 'opacity-60' : 'opacity-100'}`}

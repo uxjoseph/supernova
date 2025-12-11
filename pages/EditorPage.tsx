@@ -301,6 +301,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
 
   const handleSendMessage = async (content: string, images: string[], model: ModelType) => {
     // #region agent log
+    console.log('[DEBUG EditorPage] handleSendMessage called:', { content: content.substring(0, 50), hasImages: images.length > 0, selectedNodeId });
     fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EditorPage.tsx:handleSendMessage:entry',message:'handleSendMessage called',data:{content:content.substring(0,50),hasImages:images.length>0,selectedNodeId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
     // #endregion
     const userMsg: Message = {
@@ -364,6 +365,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
           previousCode = targetNode.html;
        }
        // #region agent log
+       console.log('[DEBUG EditorPage] Modifying existing node:', { targetNodeId, hasPreviousCode: !!previousCode, previousCodeLength: previousCode?.length || 0 });
        fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EditorPage.tsx:handleSendMessage:modifyExisting',message:'Modifying existing node',data:{targetNodeId,hasPreviousCode:!!previousCode,previousCodeLength:previousCode?.length||0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
        // #endregion
     } else {
@@ -455,6 +457,7 @@ Return the COMPLETE HTML with this single element modified.
          const extractedHtml = extractHtml(fullResponse);
          // #region agent log
          if (fullResponse.length < 200 || fullResponse.length % 1000 < 50) {
+           console.log('[DEBUG EditorPage] Streaming update:', { targetNodeId, fullResponseLength: fullResponse.length, extractedHtmlLength: extractedHtml.length, extractedHtmlStart: extractedHtml.substring(0, 100), hasDoctype: extractedHtml.includes('<!DOCTYPE') });
            fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EditorPage.tsx:handleSendMessage:streamUpdate',message:'Streaming update',data:{targetNodeId,fullResponseLength:fullResponse.length,extractedHtmlLength:extractedHtml.length,extractedHtmlStart:extractedHtml.substring(0,100),hasDoctype:extractedHtml.includes('<!DOCTYPE')},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
          }
          // #endregion

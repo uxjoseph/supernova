@@ -207,37 +207,58 @@ export const generateDesignStream = async (
   }
 };
 
+// HTML에서 dark 모드 클래스 충돌 정리
+const cleanHtmlClasses = (html: string): string => {
+  // <html> 태그에서 "light dark" 또는 "dark light" 클래스 충돌 수정
+  // class="light dark" → class="light" 또는 class="" 
+  return html
+    // class="light dark" 또는 class="dark light" → class="" (빈 클래스)
+    .replace(/<html([^>]*?)class\s*=\s*["']([^"']*?\b)(light\s+dark|dark\s+light)(\b[^"']*?)["']/gi, '<html$1class="$2$4"')
+    // class="dark" 만 있는 경우 → 제거 (라이트모드 강제)
+    .replace(/<html([^>]*?)class\s*=\s*["']([^"']*?\b)dark(\b[^"']*?)["']/gi, '<html$1class="$2$3"')
+    // 빈 class 속성 정리
+    .replace(/<html([^>]*?)class\s*=\s*["']\s*["']/gi, '<html$1');
+};
+
 export const extractHtml = (response: string): string => {
+  let html = '';
+  
   // 1. Try to find code block with closing backticks
   const match = response.match(/```html([\s\S]*?)```/);
   if (match && match[1]) {
-    return match[1].trim();
+    html = match[1].trim();
+  } else {
+    // 2. Try to find code block start only (streaming scenario)
+    const startMatch = response.match(/```html([\s\S]*)/);
+    if (startMatch && startMatch[1]) {
+      const content = startMatch[1];
+      // Check if we have DOCTYPE or html tag inside the block
+      const docTypeIndex = content.indexOf('<!DOCTYPE html>');
+      const htmlTagIndex = content.indexOf('<html');
+      
+      if (docTypeIndex !== -1) {
+        html = content.substring(docTypeIndex);
+      } else if (htmlTagIndex !== -1) {
+        html = content.substring(htmlTagIndex);
+      } else {
+        html = content;
+      }
+    } else {
+      // 3. Fallback: look for DOCTYPE or html tag in raw response
+      const docTypeIndex = response.indexOf('<!DOCTYPE html>');
+      if (docTypeIndex !== -1) {
+        html = response.substring(docTypeIndex);
+      } else {
+        const htmlTagIndex = response.indexOf('<html');
+        if (htmlTagIndex !== -1) {
+          html = response.substring(htmlTagIndex);
+        } else {
+          html = response;
+        }
+      }
+    }
   }
 
-  // 2. Try to find code block start only (streaming scenario)
-  const startMatch = response.match(/```html([\s\S]*)/);
-  if (startMatch && startMatch[1]) {
-    const content = startMatch[1];
-    // Check if we have DOCTYPE or html tag inside the block
-    const docTypeIndex = content.indexOf('<!DOCTYPE html>');
-    const htmlTagIndex = content.indexOf('<html');
-    
-    if (docTypeIndex !== -1) return content.substring(docTypeIndex);
-    if (htmlTagIndex !== -1) return content.substring(htmlTagIndex);
-    
-    return content;
-  }
-
-  // 3. Fallback: look for DOCTYPE or html tag in raw response
-  const docTypeIndex = response.indexOf('<!DOCTYPE html>');
-  if (docTypeIndex !== -1) {
-    return response.substring(docTypeIndex);
-  }
-  
-  const htmlTagIndex = response.indexOf('<html');
-  if (htmlTagIndex !== -1) {
-    return response.substring(htmlTagIndex);
-  }
-
-  return response;
+  // dark 모드 클래스 충돌 정리
+  return cleanHtmlClasses(html);
 };
