@@ -485,7 +485,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     // #endregion
     
     // 🔒 크레딧 체크: 생성 전에 먼저 확인
-    if (!hasEnoughCredits('generate')) {
+    if (!hasEnoughCredits('generation')) {
       console.warn('[Credits] Not enough credits to generate');
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
