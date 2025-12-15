@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
-  MousePointer2, Hand, ZoomIn, ZoomOut, Layout, Code, GripVertical, Layers, Pin, RefreshCw, 
-  Edit3, Link as LinkIcon, Play, MoreHorizontal, ChevronDown, Download, Smartphone, Tablet, Monitor,
+  MousePointer2, Hand, ZoomIn, ZoomOut, Layout, GripVertical, Layers, Pin, RefreshCw, 
+  Link as LinkIcon, Play, MoreHorizontal, ChevronDown, Download, Smartphone, Tablet, Monitor,
   Copy, Check, FileCode, CheckCircle2, ExternalLink, Image as ImageIcon, Loader2, Sparkles, X, Send, Plus,
   History, RotateCw, StickyNote, Type, Component as ComponentIcon, LayoutGrid, Zap, Share2, Globe, Link2
 } from 'lucide-react';
@@ -106,14 +106,6 @@ const PreviewTabContent: React.FC<PreviewTabContentProps> = ({ node, onCopyToFig
             title="버전 히스토리 (준비 중)"
           >
             <History size={16} />
-          </button>
-
-          {/* Code View */}
-          <button 
-            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700 transition-colors"
-            title="코드 보기"
-          >
-            <Code size={16} />
           </button>
 
           {/* Open in New Tab */}
@@ -449,11 +441,73 @@ export const Canvas: React.FC<CanvasProps> = ({
     return null;
   };
 
+  // AI 생성 HTML에서 위험한 스크립트 제거 (부모 창 DOM 조작 방지)
+  const sanitizeHtml = (html: string): string => {
+    let sanitized = html;
+    
+    // 1. document.documentElement 조작 코드 제거 (다크모드 등)
+    sanitized = sanitized
+      .replace(/document\.documentElement\.classList\.(add|remove|toggle)\s*\([^)]*\)/gi, '/* blocked */')
+      .replace(/document\.documentElement\.className\s*[+]?=/gi, '/* blocked */ void ')
+      .replace(/document\.documentElement\.setAttribute\s*\(\s*['"]class['"]/gi, '/* blocked */ void(')
+      
+    // 2. parent/top window 접근 차단 (postMessage 제외)
+    sanitized = sanitized
+      .replace(/(?<!window\.)parent\.document/gi, '/* blocked */ null')
+      .replace(/(?<!window\.)top\.document/gi, '/* blocked */ null')
+      .replace(/window\.parent\.document/gi, '/* blocked */ null')
+      .replace(/window\.top\.document/gi, '/* blocked */ null')
+      .replace(/parent\.location/gi, '/* blocked */ null')
+      .replace(/top\.location/gi, '/* blocked */ null')
+      
+    // 3. 다크모드 감지 후 classList 조작 패턴 제거
+    sanitized = sanitized
+      .replace(/matchMedia\s*\(\s*['"][^'"]*prefers-color-scheme[^'"]*['"]\s*\)[^}]*classList[^}]*}/gi, '/* dark mode blocked */ }')
+      .replace(/matchMedia\s*\(\s*['"][^'"]*dark[^'"]*['"]\s*\)\.matches/gi, 'false /* dark mode disabled */')
+      
+    // 4. localStorage/sessionStorage의 theme/dark 관련 접근 차단
+    sanitized = sanitized
+      .replace(/localStorage\.getItem\s*\(\s*['"]theme['"]\s*\)/gi, '""')
+      .replace(/localStorage\.getItem\s*\(\s*['"]darkMode['"]\s*\)/gi, '""')
+      .replace(/localStorage\.getItem\s*\(\s*['"]dark['"]\s*\)/gi, '""');
+    
+    return sanitized;
+  };
+
   // Inject interaction script into HTML
   const getInteractableHtml = (html: string, nodeId: string) => {
+    // 먼저 위험한 스크립트 제거
+    const sanitizedHtml = sanitizeHtml(html);
+    
+    // 부모 창 보호 및 인터랙션 스크립트 추가
     const script = `
       <script>
         (function() {
+          // 부모 창 document 접근 차단 - 이 스크립트가 가장 먼저 실행됨
+          const _origDocumentElement = document.documentElement;
+          
+          // 다른 스크립트가 부모 창을 조작하지 못하도록 방지
+          try {
+            // 다크모드 관련 조작 차단
+            const origAdd = _origDocumentElement.classList.add.bind(_origDocumentElement.classList);
+            const origRemove = _origDocumentElement.classList.remove.bind(_origDocumentElement.classList);
+            const origToggle = _origDocumentElement.classList.toggle.bind(_origDocumentElement.classList);
+            
+            _origDocumentElement.classList.add = function(...args) {
+              // 'dark', 'light' 클래스 추가 차단
+              const filtered = args.filter(c => c !== 'dark' && c !== 'light');
+              if (filtered.length > 0) origAdd(...filtered);
+            };
+            _origDocumentElement.classList.remove = function(...args) {
+              const filtered = args.filter(c => c !== 'dark' && c !== 'light');
+              if (filtered.length > 0) origRemove(...filtered);
+            };
+            _origDocumentElement.classList.toggle = function(token, force) {
+              if (token === 'dark' || token === 'light') return false;
+              return origToggle(token, force);
+            };
+          } catch(e) {}
+          
           let hoveredElement = null;
           let selectedElement = null;
           
@@ -547,7 +601,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         })();
       </script>
     `;
-    return html + script;
+    return sanitizedHtml + script;
   };
   
   // Toggle Editing Mode
@@ -1163,9 +1217,11 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     setIsCopyingImage(true);
     
+    let tempContainer: HTMLDivElement | null = null;
+    
     try {
       // 임시 컨테이너 생성
-      const tempContainer = document.createElement('div');
+      tempContainer = document.createElement('div');
       tempContainer.style.cssText = `
         position: fixed;
         left: -9999px;
@@ -1174,6 +1230,8 @@ export const Canvas: React.FC<CanvasProps> = ({
         height: ${node.height}px;
         overflow: hidden;
         background: white;
+        z-index: -9999;
+        visibility: hidden;
       `;
       document.body.appendChild(tempContainer);
 
@@ -1186,23 +1244,34 @@ export const Canvas: React.FC<CanvasProps> = ({
       `;
       tempContainer.appendChild(tempIframe);
 
-      // iframe에 HTML 로드
-      await new Promise<void>((resolve) => {
-        tempIframe.onload = () => resolve();
-        tempIframe.srcdoc = node.html;
-      });
+      // iframe에 HTML 로드 (타임아웃 포함)
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          tempIframe.onload = () => resolve();
+          tempIframe.srcdoc = node.html;
+        }),
+        new Promise<void>((_, reject) => {
+          setTimeout(() => reject(new Error('iframe load timeout')), 10000);
+        })
+      ]);
 
       // 로드 완료 후 약간의 대기 (스타일 적용을 위해)
       await new Promise(r => setTimeout(r, 500));
 
-      // iframe 내부 body를 캡처
-      const iframeDoc = tempIframe.contentDocument || tempIframe.contentWindow?.document;
+      // iframe 내부 body를 캡처 (안전한 접근)
+      let iframeDoc: Document | null = null;
+      try {
+        iframeDoc = tempIframe.contentDocument || tempIframe.contentWindow?.document || null;
+      } catch (accessError) {
+        throw new Error("Cannot access iframe document");
+      }
+      
       if (!iframeDoc?.body) {
         throw new Error("iframe document not available");
       }
 
-      // html2canvas로 캡처
-      const canvas = await html2canvas(iframeDoc.body, {
+      // html2canvas로 캡처 (타임아웃 포함)
+      const capturePromise = html2canvas(iframeDoc.body, {
         width: node.width,
         height: node.height,
         scale: 2, // 고해상도 캡처
@@ -1211,9 +1280,18 @@ export const Canvas: React.FC<CanvasProps> = ({
         backgroundColor: '#ffffff',
         logging: false,
       });
+      
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('html2canvas timeout')), 15000);
+      });
+
+      const canvas = await Promise.race([capturePromise, timeoutPromise]);
 
       // 임시 컨테이너 제거
-      document.body.removeChild(tempContainer);
+      if (tempContainer && tempContainer.parentNode) {
+        document.body.removeChild(tempContainer);
+        tempContainer = null;
+      }
 
       // Canvas를 Blob으로 변환
       const blob = await new Promise<Blob>((resolve, reject) => {
@@ -1241,6 +1319,14 @@ export const Canvas: React.FC<CanvasProps> = ({
         alert("복사 중 오류가 발생했습니다.");
       }
     } finally {
+      // 임시 컨테이너 정리 (에러 발생 시에도)
+      if (tempContainer && tempContainer.parentNode) {
+        try {
+          document.body.removeChild(tempContainer);
+        } catch (cleanupError) {
+          console.warn('Failed to cleanup temp container:', cleanupError);
+        }
+      }
       setIsCopyingImage(false);
     }
   };
@@ -1737,8 +1823,6 @@ export const Canvas: React.FC<CanvasProps> = ({
                       </button>
                       <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-900 transition-colors" title="새로고침"><RefreshCw size={16} /></button>
                       <div className="w-px h-4 bg-gray-200 mx-0.5" />
-                      <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-900 transition-colors" title="코드 보기"><Code size={16} /></button>
-                      <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-900 transition-colors" title="편집"><Edit3 size={16} /></button>
                       
                       {/* Share Button with Modal */}
                       <div className="relative" ref={shareModalRef}>

@@ -207,17 +207,37 @@ export const generateDesignStream = async (
   }
 };
 
-// HTML에서 dark 모드 클래스 충돌 정리
+// HTML에서 dark 모드 클래스 충돌 정리 및 위험한 스크립트 제거
 const cleanHtmlClasses = (html: string): string => {
-  // <html> 태그에서 "light dark" 또는 "dark light" 클래스 충돌 수정
-  // class="light dark" → class="light" 또는 class="" 
-  return html
+  let cleaned = html;
+  
+  // 1. <html> 태그에서 "light dark" 또는 "dark light" 클래스 충돌 수정
+  cleaned = cleaned
     // class="light dark" 또는 class="dark light" → class="" (빈 클래스)
     .replace(/<html([^>]*?)class\s*=\s*["']([^"']*?\b)(light\s+dark|dark\s+light)(\b[^"']*?)["']/gi, '<html$1class="$2$4"')
     // class="dark" 만 있는 경우 → 제거 (라이트모드 강제)
     .replace(/<html([^>]*?)class\s*=\s*["']([^"']*?\b)dark(\b[^"']*?)["']/gi, '<html$1class="$2$3"')
     // 빈 class 속성 정리
     .replace(/<html([^>]*?)class\s*=\s*["']\s*["']/gi, '<html$1');
+  
+  // 2. 위험한 JavaScript 코드 제거 - 부모 창의 document를 조작하는 코드
+  // document.documentElement.classList 조작 코드 제거 (다크모드 관련)
+  cleaned = cleaned
+    // document.documentElement.classList.add/remove/toggle('dark') 제거
+    .replace(/document\.documentElement\.classList\.(add|remove|toggle)\s*\(\s*['"]dark['"]\s*\)/gi, '/* dark mode disabled */')
+    // document.documentElement.className 조작 제거
+    .replace(/document\.documentElement\.className\s*[+]?=\s*['"][^'"]*dark[^'"]*['"]/gi, '/* dark mode disabled */')
+    // window.matchMedia dark mode 감지 후 classList 조작 패턴 제거
+    .replace(/if\s*\(\s*window\.matchMedia\s*\(\s*['"][^'"]*dark[^'"]*['"]\s*\)\.matches\s*\)\s*\{[^}]*classList[^}]*\}/gi, '/* dark mode disabled */');
+  
+  // 3. parent/top document 접근 차단
+  cleaned = cleaned
+    .replace(/parent\.document/gi, '/* blocked */ null')
+    .replace(/top\.document/gi, '/* blocked */ null')
+    .replace(/window\.parent\.document/gi, '/* blocked */ null')
+    .replace(/window\.top\.document/gi, '/* blocked */ null');
+  
+  return cleaned;
 };
 
 export const extractHtml = (response: string): string => {

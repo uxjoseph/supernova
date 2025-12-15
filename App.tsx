@@ -6,9 +6,10 @@ import { SettingsPage } from './pages/SettingsPage';
 import { PublishedPage } from './pages/PublishedPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { TermsOfServicePage } from './pages/TermsOfServicePage';
+import { AdminPricePage } from './pages/AdminPricePage';
 import { ModelType } from './services/geminiService';
 
-type Page = 'landing' | 'editor' | 'settings' | 'published' | 'privacy' | 'terms';
+type Page = 'landing' | 'editor' | 'settings' | 'published' | 'privacy' | 'terms' | 'adminprice';
 
 interface EditorState {
   id: string; // 고유 세션 ID
@@ -40,6 +41,11 @@ const getRouteFromUrl = (): { page: Page; slug?: string } => {
     return { page: 'terms' };
   }
   
+  // Check for admin price route
+  if (path === '/adminprice') {
+    return { page: 'adminprice' };
+  }
+  
   return { page: 'landing' };
 };
 
@@ -59,6 +65,8 @@ const AppContent: React.FC = () => {
         setCurrentPage('privacy');
       } else if (route.page === 'terms') {
         setCurrentPage('terms');
+      } else if (route.page === 'adminprice') {
+        setCurrentPage('adminprice');
       } else {
         setCurrentPage('landing');
       }
@@ -115,6 +123,11 @@ const AppContent: React.FC = () => {
   // Terms of Service page
   if (currentPage === 'terms') {
     return <TermsOfServicePage onNavigateBack={handleNavigateToLanding} />;
+  }
+
+  // Admin Price page
+  if (currentPage === 'adminprice') {
+    return <AdminPricePage onNavigateBack={handleNavigateToLanding} />;
   }
 
   // Published page (public access)

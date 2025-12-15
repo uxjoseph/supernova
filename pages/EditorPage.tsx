@@ -252,58 +252,250 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     return features;
   };
 
-  // HTML을 썸네일 이미지로 변환 - Canvas에서 렌더링된 iframe을 캡처
-  const captureNodeThumbnail = useCallback(async (nodeId: string): Promise<string | null> => {
-    try {
-      console.log('[Thumbnail] Capturing thumbnail for node:', nodeId);
+  // HTML을 썸네일 이미지로 변환 - 안전하게 격리된 환경에서 캡처
+  // 스크립트를 완전히 제거한 HTML만 로드하여 부모 창에 영향 없음
+  const captureNodeThumbnail = useCallback(async (nodeId: string, htmlContent?: string): Promise<string | null> => {
+    return new Promise(async (resolve) => {
+      let tempContainer: HTMLDivElement | null = null;
       
-      // Canvas에서 렌더링된 iframe 찾기
-      const iframe = document.querySelector(`iframe[data-node-id="${nodeId}"]`) as HTMLIFrameElement;
-      
-      if (!iframe) {
-        console.warn('[Thumbnail] Iframe not found for node:', nodeId);
-        return null;
-      }
-
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!iframeDoc || !iframeDoc.body) {
-        console.warn('[Thumbnail] Cannot access iframe document');
-        return null;
-      }
-
-      // 렌더링이 완료될 때까지 대기
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const html2canvas = (await import('html2canvas')).default;
-      
-      const canvas = await html2canvas(iframeDoc.body, {
-        width: 1440,
-        height: 900,
-        scale: 0.25, // 360x225 thumbnail
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        onclone: (clonedDoc) => {
-          // 클론된 문서에서 스크롤 위치를 최상단으로
-          clonedDoc.body.style.overflow = 'hidden';
+      try {
+        console.log('[Thumbnail] Capturing thumbnail for node:', nodeId);
+        
+        // HTML 콘텐츠 가져오기
+        const node = nodes.find(n => n.id === nodeId);
+        const html = htmlContent || node?.html;
+        
+        if (!html || html.length < 100) {
+          console.warn('[Thumbnail] No HTML content available for node:', nodeId);
+          resolve(null);
+          return;
         }
-      });
-      
-      const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.7);
-      console.log('[Thumbnail] Capture successful, size:', thumbnailUrl.length);
-      return thumbnailUrl;
-    } catch (error) {
-      console.error('[Thumbnail] Error capturing:', error);
-      return null;
-    }
-  }, []);
+
+        // html2canvas 동적 임포트
+        let html2canvas: any;
+        try {
+          html2canvas = (await import('html2canvas')).default;
+        } catch (importError) {
+          console.error('[Thumbnail] Failed to load html2canvas:', importError);
+          resolve(null);
+          return;
+        }
+        
+        // HTML을 썸네일 캡처용으로 정리
+        // Tailwind CDN은 유지하고, 위험한 사용자 스크립트만 제거
+        const sanitizeHtmlForThumbnail = (rawHtml: string): string => {
+          // 보호 스크립트: iframe 내에서 부모 창 조작 차단
+          const protectionScript = `
+            <script>
+              (function() {
+                // 부모/최상위 창 접근 차단
+                try {
+                  Object.defineProperty(window, 'parent', { value: window, writable: false });
+                  Object.defineProperty(window, 'top', { value: window, writable: false });
+                } catch(e) {}
+                
+                // document.documentElement.classList 조작 차단
+                try {
+                  const origAdd = document.documentElement.classList.add.bind(document.documentElement.classList);
+                  const origRemove = document.documentElement.classList.remove.bind(document.documentElement.classList);
+                  const origToggle = document.documentElement.classList.toggle.bind(document.documentElement.classList);
+                  
+                  document.documentElement.classList.add = function(...args) {
+                    const safe = args.filter(c => c !== 'dark' && c !== 'light');
+                    if (safe.length > 0) origAdd(...safe);
+                  };
+                  document.documentElement.classList.remove = function(...args) {
+                    const safe = args.filter(c => c !== 'dark' && c !== 'light');
+                    if (safe.length > 0) origRemove(...safe);
+                  };
+                  document.documentElement.classList.toggle = function(token, force) {
+                    if (token === 'dark' || token === 'light') return false;
+                    return origToggle(token, force);
+                  };
+                } catch(e) {}
+                
+                // localStorage 접근 차단 (다크모드 감지 방지)
+                try {
+                  const fakeStorage = {
+                    getItem: () => null,
+                    setItem: () => {},
+                    removeItem: () => {},
+                    clear: () => {},
+                    key: () => null,
+                    length: 0
+                  };
+                  Object.defineProperty(window, 'localStorage', { value: fakeStorage, writable: false });
+                } catch(e) {}
+                
+                // matchMedia 다크모드 감지 차단
+                const origMatchMedia = window.matchMedia;
+                window.matchMedia = function(query) {
+                  if (query.includes('prefers-color-scheme')) {
+                    return { matches: false, media: query, addEventListener: () => {}, removeEventListener: () => {} };
+                  }
+                  return origMatchMedia ? origMatchMedia.call(window, query) : { matches: false, media: query };
+                };
+              })();
+            </script>
+          `;
+          
+          let processed = rawHtml
+            // 인라인 이벤트 핸들러 제거 (onclick, onload, onerror 등)
+            .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '')
+            .replace(/\s+on\w+\s*=\s*[^\s>]+/gi, '')
+            // javascript: 프로토콜 제거
+            .replace(/href\s*=\s*["']javascript:[^"']*["']/gi, 'href="#"')
+            // <html> 태그의 dark/light 클래스 충돌 정리 및 light 강제
+            .replace(/<html([^>]*?)class\s*=\s*["']([^"']*?)(light\s+dark|dark\s+light)([^"']*?)["']/gi, '<html$1class="$2light$4"')
+            .replace(/<html([^>]*?)class\s*=\s*["']([^"']*?)\bdark\b([^"']*?)["']/gi, '<html$1class="$2$3"');
+          
+          // <head> 태그 시작 직후에 보호 스크립트 주입 (가장 먼저 실행되도록)
+          if (processed.includes('<head>')) {
+            processed = processed.replace('<head>', '<head>' + protectionScript);
+          } else if (processed.includes('<head ')) {
+            processed = processed.replace(/<head([^>]*)>/, '<head$1>' + protectionScript);
+          } else {
+            // <head>가 없으면 <html> 직후에 추가
+            processed = processed.replace(/<html([^>]*)>/i, '<html$1><head>' + protectionScript + '</head>');
+          }
+          
+          return processed;
+        };
+        
+        const safeHtml = sanitizeHtmlForThumbnail(html);
+        
+        // 격리된 숨겨진 컨테이너 생성
+        tempContainer = document.createElement('div');
+        tempContainer.style.cssText = `
+          position: fixed;
+          left: -99999px;
+          top: -99999px;
+          width: 1440px;
+          height: 900px;
+          overflow: hidden;
+          visibility: hidden;
+          pointer-events: none;
+          z-index: -99999;
+        `;
+        document.body.appendChild(tempContainer);
+
+        // 격리된 iframe 생성
+        // allow-same-origin: contentDocument 접근 허용 (html2canvas에 필요)
+        // allow-scripts: Tailwind CDN 스크립트 실행 허용 (CSS 적용에 필요)
+        const tempIframe = document.createElement('iframe');
+        tempIframe.style.cssText = `
+          width: 1440px;
+          height: 900px;
+          border: none;
+          background: white;
+        `;
+        tempIframe.sandbox.add('allow-same-origin'); // contentDocument 접근 허용
+        tempIframe.sandbox.add('allow-scripts'); // CSS 생성 스크립트 실행 허용
+        tempContainer.appendChild(tempIframe);
+
+        // iframe 로드 대기 (타임아웃 포함)
+        const loadPromise = new Promise<void>((loadResolve, loadReject) => {
+          const loadTimeout = setTimeout(() => loadReject(new Error('iframe load timeout')), 8000);
+          tempIframe.onload = () => {
+            clearTimeout(loadTimeout);
+            loadResolve();
+          };
+          tempIframe.onerror = () => {
+            clearTimeout(loadTimeout);
+            loadReject(new Error('iframe load error'));
+          };
+          tempIframe.srcdoc = safeHtml;
+        });
+
+        try {
+          await loadPromise;
+        } catch (loadError) {
+          console.warn('[Thumbnail] iframe load failed:', loadError);
+          resolve(null);
+          return;
+        }
+
+        // 렌더링 완료 대기 (이미지, 폰트 로드 등)
+        await new Promise(r => setTimeout(r, 1500));
+
+        // iframe 내부 document 접근
+        let iframeDoc: Document | null = null;
+        try {
+          iframeDoc = tempIframe.contentDocument || tempIframe.contentWindow?.document || null;
+        } catch (accessError) {
+          console.warn('[Thumbnail] Cannot access iframe document:', accessError);
+          resolve(null);
+          return;
+        }
+
+        if (!iframeDoc || !iframeDoc.body) {
+          console.warn('[Thumbnail] Iframe document not available');
+          resolve(null);
+          return;
+        }
+
+        console.log('[Thumbnail] iframe document ready, starting capture...');
+
+        // html2canvas로 캡처 (타임아웃 적용)
+        const capturePromise = html2canvas(iframeDoc.body, {
+          width: 1440,
+          height: 900,
+          scale: 0.25, // 360x225 썸네일
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          foreignObjectRendering: false,
+          imageTimeout: 5000, // 이미지 로드 타임아웃
+        });
+
+        const timeoutPromise = new Promise<null>((_, reject) => {
+          setTimeout(() => reject(new Error('Thumbnail capture timeout')), 15000);
+        });
+
+        const canvas = await Promise.race([capturePromise, timeoutPromise]);
+        if (canvas && typeof canvas.toDataURL === 'function') {
+          const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.7);
+          console.log('[Thumbnail] Capture successful, size:', thumbnailUrl.length);
+          resolve(thumbnailUrl);
+        } else {
+          console.warn('[Thumbnail] Canvas not generated');
+          resolve(null);
+        }
+      } catch (error) {
+        console.error('[Thumbnail] Error capturing:', error);
+        resolve(null);
+      } finally {
+        // 임시 컨테이너 정리
+        if (tempContainer && tempContainer.parentNode) {
+          try {
+            document.body.removeChild(tempContainer);
+          } catch (cleanupError) {
+            console.warn('[Thumbnail] Cleanup error:', cleanupError);
+          }
+        }
+      }
+    });
+  }, [nodes]);
 
   const handleSendMessage = async (content: string, images: string[], model: ModelType) => {
     // #region agent log
     console.log('[DEBUG EditorPage] handleSendMessage called:', { content: content.substring(0, 50), hasImages: images.length > 0, selectedNodeId });
     fetch('http://127.0.0.1:7242/ingest/e37886a5-8a1f-45f7-8dd2-22bae65fe9fd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EditorPage.tsx:handleSendMessage:entry',message:'handleSendMessage called',data:{content:content.substring(0,50),hasImages:images.length>0,selectedNodeId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
     // #endregion
+    
+    // 🔒 크레딧 체크: 생성 전에 먼저 확인
+    if (!hasEnoughCredits('generate')) {
+      console.warn('[Credits] Not enough credits to generate');
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: Role.MODEL,
+        content: '❌ 크레딧이 부족합니다. 더 많은 크레딧을 얻으려면 플랜을 업그레이드하세요.',
+        timestamp: Date.now()
+      }]);
+      return; // 생성 중단
+    }
+    
     const userMsg: Message = {
       id: Date.now().toString(),
       role: Role.USER,
@@ -529,14 +721,30 @@ Return the COMPLETE HTML with this single element modified.
         // Capture and save thumbnail for the first node
         const currentNodes = nodes.filter(n => n.id !== targetNodeId);
         if (currentNodes.length === 0) {
-          // 노드가 렌더링된 후 썸네일 캡처 (더 긴 대기 시간)
-          setTimeout(async () => {
-            const thumbnail = await captureNodeThumbnail(targetNodeId);
-            if (thumbnail) {
-              console.log('[EditorPage] Updating project thumbnail');
-              updateProjectThumbnail(thumbnail);
+          // 노드가 렌더링된 후 썸네일 캡처 (격리된 환경에서 안전하게)
+          const captureWithSafety = async () => {
+            try {
+              // cleanHtml을 직접 전달하여 현재 메인 페이지 iframe에 의존하지 않음
+              const thumbnail = await captureNodeThumbnail(targetNodeId, cleanHtml);
+              if (thumbnail) {
+                console.log('[EditorPage] Updating project thumbnail');
+                updateProjectThumbnail(thumbnail);
+              }
+            } catch (thumbnailError) {
+              console.warn('[EditorPage] Thumbnail capture failed, skipping:', thumbnailError);
+              // 썸네일 캡처 실패해도 앱은 계속 동작
             }
-          }, 2500); // iframe 렌더링 완료 후 캡처
+          };
+          
+          // 2초 후 안전하게 캡처 시도 (격리된 환경이므로 대기 시간 단축)
+          setTimeout(() => {
+            // requestIdleCallback이 있으면 사용, 없으면 바로 실행
+            if ('requestIdleCallback' in window) {
+              (window as any).requestIdleCallback(captureWithSafety, { timeout: 5000 });
+            } else {
+              captureWithSafety();
+            }
+          }, 2000);
         }
       } else {
         console.warn('[EditorPage] Cannot save: no project ID available');
@@ -548,7 +756,7 @@ Return the COMPLETE HTML with this single element modified.
             ? { 
                 ...msg, 
                 isThinking: false,
-                creditsUsed: Math.round(creditsUsed * 100) / 100,
+                // 크레딧은 Supabase에서 관리되므로 토큰 사용량만 표시
                 tokenUsage: streamResult.tokenUsage
               }
             : msg
@@ -695,6 +903,18 @@ Return the COMPLETE HTML with this single element modified.
     const sourceNode = nodes.find(n => n.id === nodeId);
     if (!sourceNode || !sourceNode.html) return;
 
+    // 🔒 크레딧 체크: 변종 생성 전에 먼저 확인
+    if (!hasEnoughCredits('variant')) {
+      console.warn('[Credits] Not enough credits to create variant');
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: Role.MODEL,
+        content: '❌ 크레딧이 부족합니다. 더 많은 크레딧을 얻으려면 플랜을 업그레이드하세요.',
+        timestamp: Date.now()
+      }]);
+      return; // 생성 중단
+    }
+
     const model: ModelType = 'fast';
     const currentProjectId = projectIdRef.current || project?.id;
     
@@ -813,7 +1033,7 @@ Return the COMPLETE HTML with this single element modified.
             ? { 
                 ...msg, 
                 isThinking: false,
-                creditsUsed: Math.round(variantCreditsUsed * 100) / 100,
+                // 크레딧은 Supabase에서 관리되므로 토큰 사용량만 표시
                 tokenUsage: variantResult.tokenUsage
               }
             : msg
@@ -847,6 +1067,18 @@ Return the COMPLETE HTML with this single element modified.
     
     const sourceNode = nodes.find(n => n.id === variantState.sourceNodeId);
     if (!sourceNode) return;
+
+    // 🔒 크레딧 체크: 변종 생성 전에 먼저 확인
+    if (!hasEnoughCredits('variant')) {
+      console.warn('[Credits] Not enough credits to create variant');
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: Role.MODEL,
+        content: '❌ 크레딧이 부족합니다. 더 많은 크레딧을 얻으려면 플랜을 업그레이드하세요.',
+        timestamp: Date.now()
+      }]);
+      return; // 생성 중단
+    }
     
     const currentProjectId = projectIdRef.current || project?.id;
 
@@ -995,7 +1227,7 @@ Return the COMPLETE HTML with this single element modified.
             ? { 
                 ...msg, 
                 isThinking: false,
-                creditsUsed: Math.round(variantCredits * 100) / 100,
+                // 크레딧은 Supabase에서 관리되므로 토큰 사용량만 표시
                 tokenUsage: variantStreamResult.tokenUsage
               }
             : msg
