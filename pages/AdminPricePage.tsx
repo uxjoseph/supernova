@@ -30,12 +30,9 @@ export const AdminPricePage: React.FC<AdminPricePageProps> = ({ onNavigateBack }
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // 관리자 권한 체크 (이메일 기반 - 실제 운영에서는 더 강력한 인증 필요)
-  const isAdmin = user && (
-    ADMIN_EMAILS.includes(user.email || '') || 
-    profile?.email === 'admin@supernova.com' ||
-    user.email?.endsWith('@supernova.com')
-  );
+  // 관리자 권한 체크 (현재는 모든 로그인 사용자 허용)
+  // TODO: 실제 운영 시 특정 이메일이나 role 기반으로 제한 필요
+  const isAdmin = !!user;
 
   // 사용자 검색
   const handleSearchUser = async () => {
