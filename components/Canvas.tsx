@@ -3,7 +3,7 @@ import {
   MousePointer2, Hand, ZoomIn, ZoomOut, Layout, GripVertical, Layers, Pin, RefreshCw, 
   Link as LinkIcon, Play, MoreHorizontal, ChevronDown, Download, Smartphone, Tablet, Monitor,
   Copy, Check, FileCode, CheckCircle2, ExternalLink, Image as ImageIcon, Loader2, Sparkles, X, Send, Plus,
-  History, RotateCw, StickyNote, Type, Component as ComponentIcon, LayoutGrid, Zap, Share2, Globe, Link2
+  History, RotateCw, StickyNote, Type, Component as ComponentIcon, LayoutGrid, Zap, Share2, Globe, Link2, Edit3
 } from 'lucide-react';
 import { DesignNode, PreviewTab, SelectedElement, NodeType } from '../types';
 import { PublishedPage } from '../types/database';
@@ -1709,6 +1709,9 @@ export const Canvas: React.FC<CanvasProps> = ({
                             onKeyDown={(e) => {
                               if (e.key === 'Escape') {
                                 setEditingNoteId(null);
+                              } else if (e.key === 'Tab') {
+                                e.preventDefault();
+                                handleSaveNoteContent(node.id, editingNoteContent);
                               }
                             }}
                             placeholder="노트 내용을 입력하세요..."
@@ -1787,6 +1790,10 @@ export const Canvas: React.FC<CanvasProps> = ({
                            e.stopPropagation();
                            if (e.key === 'Enter') handleSaveTitle();
                            if (e.key === 'Escape') handleCancelEditingTitle();
+                           if (e.key === 'Tab') {
+                             e.preventDefault();
+                             handleSaveTitle();
+                           }
                          }}
                          onBlur={handleSaveTitle}
                          onClick={(e) => e.stopPropagation()}
@@ -2200,7 +2207,21 @@ export const Canvas: React.FC<CanvasProps> = ({
                             type="text"
                             value={editValue}
                             onChange={(e) => handleElementUpdate(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && applyElementUpdate()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                applyElementUpdate();
+                              } else if (e.key === 'Tab') {
+                                e.preventDefault();
+                                applyElementUpdate();
+                              } else if (e.key === 'Escape') {
+                                setSelectedElement(null);
+                                onSelectElement?.(null);
+                              }
+                            }}
+                            onBlur={() => {
+                              // 포커스 이동 시에도 변경사항 적용
+                              applyElementUpdate();
+                            }}
                             className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 focus:bg-white transition-all placeholder:text-gray-400"
                             placeholder="텍스트 내용 수정..."
                             autoFocus
